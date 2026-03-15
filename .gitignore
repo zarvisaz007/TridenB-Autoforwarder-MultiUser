@@ -3,4 +3,5 @@
 *.session-journal
 __pycache__/
 tasks.json
+message_map.json
 .DS_Store

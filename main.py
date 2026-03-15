@@ -9,6 +9,7 @@ from telethon.tl.types import PeerChannel
 from telethon.errors import FloodWaitError
 
 TASKS_FILE = "tasks.json"
+MESSAGE_MAP_FILE = "message_map.json"
 SESSION_NAME = "tridenb_autoforwarder"
 
 
@@ -27,6 +28,25 @@ def load_tasks():
 def save_tasks(data):
     with open(TASKS_FILE, "w") as f:
         json.dump(data, f, indent=2)
+
+
+def load_message_map():
+    if not os.path.exists(MESSAGE_MAP_FILE):
+        return {}
+    try:
+        with open(MESSAGE_MAP_FILE, "r") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return {}
+
+
+def save_message_map(mmap):
+    with open(MESSAGE_MAP_FILE, "w") as f:
+        json.dump(mmap, f)
+
+
+def mmap_key(src_channel_id, src_msg_id):
+    return f"{src_channel_id}:{src_msg_id}"
 
 
 def next_task_id(data):
@@ -262,15 +282,24 @@ async def delete_task():
         print("Cancelled.")
 
 
+async def send_copy(client, dest_id, message, modified_text):
+    """Send message as a fresh copy — no 'Forwarded from' header."""
+    if modified_text is not None:
+        return await client.send_message(dest_id, modified_text)
+    if message.media:
+        return await client.send_file(dest_id, file=message.media, caption=message.text or "")
+    return await client.send_message(dest_id, message.text or "")
+
+
 async def run_forwarder(client):
     data = load_tasks()
     enabled = [t for t in data.get("tasks", []) if t.get("enabled")]
+    tasks_by_id = {t["id"]: t for t in data.get("tasks", [])}
 
     if not enabled:
         print("No enabled tasks. Create and enable a task first.")
         return
 
-    # Resolve source channel entities so Telethon can match events correctly
     source_to_tasks = {}
     for t in enabled:
         sid = t["source_channel_id"]
@@ -278,13 +307,13 @@ async def run_forwarder(client):
 
     print("\nResolving source channels...")
     resolved_entities = []
-    resolved_ids = {}  # entity -> original task sid key
+    resolved_ids = {}  # raw entity.id (without -100) -> stored sid
     for sid in list(source_to_tasks.keys()):
         try:
             entity = await client.get_entity(sid)
             resolved_entities.append(entity)
             resolved_ids[entity.id] = sid
-            print(f"  OK: {getattr(entity, 'title', sid)} (stored id={sid}, entity id={entity.id})")
+            print(f"  OK: {getattr(entity, 'title', sid)} (id={sid})")
         except Exception as e:
             print(f"  FAIL to resolve {sid}: {e}")
 
@@ -295,36 +324,93 @@ async def run_forwarder(client):
     print(f"\nForwarder running — watching {len(resolved_entities)} source(s) across {len(enabled)} task(s).")
     print("Press Ctrl+C to stop.\n")
 
-    @client.on(events.NewMessage(chats=resolved_entities))
-    async def handler(event):
-        raw_id = event.chat_id
-        # Map event chat_id back to the stored task sid key
-        # event.chat_id may be -100X format; entity.id is raw X
-        abs_id = abs(raw_id) % (10 ** 12)  # strip -100 prefix
-        sid = resolved_ids.get(abs_id) or resolved_ids.get(raw_id)
-        tasks_for_src = source_to_tasks.get(sid, [])
+    def get_sid(chat_id):
+        if chat_id is None:
+            return None
+        abs_id = abs(chat_id) % (10 ** 12)
+        return resolved_ids.get(abs_id) or resolved_ids.get(chat_id)
 
+    @client.on(events.NewMessage(chats=resolved_entities))
+    async def new_handler(event):
+        sid = get_sid(event.chat_id)
+        tasks_for_src = source_to_tasks.get(sid, [])
         text_preview = repr((event.message.text or "")[:60])
-        print(f"[MSG] chat_id={raw_id} abs={abs_id} sid={sid} text={text_preview}")
+        print(f"[MSG] chat={event.chat_id} text={text_preview}")
+
+        mmap = load_message_map()
+        key = mmap_key(sid, event.message.id)
+        mmap.setdefault(key, [])
 
         for task in tasks_for_src:
             should_forward, modified_text = apply_filters(event.message, task["filters"])
             if not should_forward:
-                print(f"  [SKIP] '{task['name']}' — filtered out")
+                print(f"  [SKIP] '{task['name']}' — filtered")
                 continue
             dest_ids = task.get("destination_channel_ids") or [task.get("destination_channel_id")]
             for dest_id in dest_ids:
                 try:
-                    if modified_text is None:
-                        await client.forward_messages(dest_id, event.message)
-                    else:
-                        await client.send_message(dest_id, modified_text)
-                    print(f"  [OK] '{task['name']}' → {dest_id}")
+                    sent = await send_copy(client, dest_id, event.message, modified_text)
+                    mmap[key].append({"task_id": task["id"], "dest": dest_id, "msg_id": sent.id})
+                    print(f"  [OK] '{task['name']}' → {dest_id} (msg {sent.id})")
                 except FloodWaitError as e:
                     print(f"  [FLOOD] sleeping {e.seconds}s")
                     await asyncio.sleep(e.seconds)
                 except Exception as e:
                     print(f"  [ERR] '{task['name']}' → {dest_id}: {e}")
+
+        save_message_map(mmap)
+
+    @client.on(events.MessageEdited(chats=resolved_entities))
+    async def edit_handler(event):
+        sid = get_sid(event.chat_id)
+        key = mmap_key(sid, event.message.id)
+        mmap = load_message_map()
+        entries = mmap.get(key, [])
+        if not entries:
+            return
+        print(f"[EDIT] chat={event.chat_id} msg={event.message.id}")
+        for entry in entries:
+            task = tasks_by_id.get(entry["task_id"])
+            if not task:
+                continue
+            should_forward, modified_text = apply_filters(event.message, task["filters"])
+            if not should_forward:
+                continue
+            new_text = modified_text if modified_text is not None else (event.message.text or "")
+            try:
+                await client.edit_message(entry["dest"], entry["msg_id"], text=new_text)
+                print(f"  [EDIT OK] → {entry['dest']} msg {entry['msg_id']}")
+            except Exception as e:
+                print(f"  [EDIT ERR] {entry['dest']}: {e}")
+
+    @client.on(events.MessageDeleted(chats=resolved_entities))
+    async def delete_handler(event):
+        sid = get_sid(event.chat_id)
+        mmap = load_message_map()
+        changed = False
+        for deleted_id in event.deleted_ids:
+            key = mmap_key(sid, deleted_id) if sid else None
+            entries = mmap.get(key, []) if key else []
+            if not entries:
+                # Fallback: scan map for this msg_id
+                for k, v in mmap.items():
+                    if k.endswith(f":{deleted_id}"):
+                        entries = v
+                        key = k
+                        break
+            if not entries:
+                continue
+            print(f"[DEL] msg={deleted_id}")
+            for entry in entries:
+                try:
+                    await client.delete_messages(entry["dest"], [entry["msg_id"]])
+                    print(f"  [DEL OK] → {entry['dest']} msg {entry['msg_id']}")
+                except Exception as e:
+                    print(f"  [DEL ERR] {entry['dest']}: {e}")
+            del mmap[key]
+            changed = True
+        if changed:
+            save_message_map(mmap)
 
     await client.run_until_disconnected()
 
