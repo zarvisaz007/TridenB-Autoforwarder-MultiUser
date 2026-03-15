@@ -26,7 +26,8 @@ Local CLI tool that forwards Telegram messages from source channels to destinati
 - Text modified → `send_message()` (text only)
 
 ## Current Status (2026-03-15)
-Scaffold complete. Features need to be verified one by one.
+Options 1, 2, 3 complete. First real task created ("Options expert").
+Next: verify Option 4 (Toggle), 5 (Edit Filters), 6 (Delete), 7 (Run Forwarder).
 See `tasks/progress.md` for checklist.
 
 ## Key Files
