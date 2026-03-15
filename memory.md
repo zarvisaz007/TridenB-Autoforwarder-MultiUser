@@ -1,16 +1,16 @@
 # TridenB Autoforwarder — Memory
 
 ## What This Project Does
-A local CLI tool that forwards Telegram messages from source channels to destination channels using a personal user account (MTProto via Telethon). No bot token — authenticates with phone + OTP.
+Local CLI tool that forwards Telegram messages from source channels to destination channels using a personal user account (MTProto via Telethon). No bot token.
 
 ## Credentials
 - Stored in `.env` (never committed)
-- API_ID and API_HASH from my.telegram.org
+- API_ID=29363636, API_HASH=dd4f18f6956a38dc18087c7495181258
 - Phone: +918544130087
 
 ## Session
 - Telethon saves session to `tridenb_autoforwarder.session` after first auth
-- Subsequent runs skip OTP — session persists until revoked
+- Subsequent runs skip OTP
 
 ## Task Storage
 - `tasks.json` — runtime file, excluded from git
@@ -22,10 +22,15 @@ A local CLI tool that forwards Telegram messages from source channels to destina
 - `clean_urls`: strip `https?://\S+` patterns
 - `clean_usernames`: strip `@word` patterns
 - `skip_images/audio/videos`: drop media messages entirely
-- If text is cleaned → sends modified text only (no media forwarded)
-- If no cleaning → uses `forward_messages` (preserves media + formatting)
+- No text mod → `forward_messages()` (preserves media + formatting)
+- Text modified → `send_message()` (text only)
+
+## Current Status (2026-03-15)
+Scaffold complete. Features need to be verified one by one.
+See `tasks/progress.md` for checklist.
 
 ## Key Files
 - `main.py` — all logic, single file
 - `tasks.json` — auto-created, runtime persistence
 - `.env` — credentials
+- `tasks/progress.md` — feature verification checklist

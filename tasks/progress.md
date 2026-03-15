@@ -1,28 +1,31 @@
 # Implementation Progress
 
-## Status: Complete
+## Status: Scaffold Complete — Feature Testing In Progress
 
-## Completed Steps
-- [x] Created project directory structure
-- [x] `requirements.txt` (telethon>=1.34.0, python-dotenv>=1.0.0)
+## Completed
+- [x] Project directory + git init
+- [x] `requirements.txt` (telethon 1.42.0, python-dotenv 1.2.1 installed)
 - [x] `.env` with credentials
-- [x] `.gitignore` (excludes .env, *.session, tasks.json, etc.)
-- [x] `tasks.json` initialized with empty tasks list
-- [x] `main.py` — full implementation
+- [x] `.gitignore`
+- [x] `tasks.json` (empty)
+- [x] `main.py` — full implementation of all 7 menu options
 - [x] `memory.md`
-- [x] `tasks/progress.md`
+- [x] Initial commit (no .env)
+- [x] Script launched in separate Terminal for OTP auth
 
-## Pending (manual steps)
-- [ ] `git init` + initial commit
-- [ ] `pip3 install -r requirements.txt`
-- [ ] First run: `python3 main.py` — complete OTP auth
+## Feature Verification (work one at a time)
+- [ ] Option 1: Get Channel ID — test with @durov or known channel
+- [ ] Option 2: Create Forwarding Task — create test task
+- [ ] Option 3: List Tasks — verify task shows in table
+- [ ] Option 4: Toggle Task — flip enabled/disabled
+- [ ] Option 5: Edit Task Filters — modify a filter, confirm saved
+- [ ] Option 6: Delete Task — confirm deletion
+- [ ] Option 7: Run Forwarder — end-to-end: send msg in source, check dest
+  - [ ] Normal forward (no filters) works
+  - [ ] Blacklist blocks message
+  - [ ] clean_urls strips URLs
+  - [ ] clean_usernames strips @handles
+  - [ ] skip_images drops image messages
 
-## Verification Checklist
-- [ ] Auth succeeds, menu appears
-- [ ] Option 1: Get channel ID works
-- [ ] Option 2: Create task works
-- [ ] Option 3: List tasks shows created task
-- [ ] Option 4: Toggle enable/disable works
-- [ ] Option 7: Forwarder runs and forwards messages
-- [ ] Blacklist filter blocks messages
-- [ ] clean_urls strips URLs from forwarded text
+## Next Session Start
+Read `memory.md` and this file to restore context before continuing.

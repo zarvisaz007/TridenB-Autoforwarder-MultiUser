@@ -83,13 +83,20 @@ def apply_filters(message, filters):
 # ---------- Async CLI functions ----------
 
 async def get_channel_id(client):
-    username = input("Enter channel username (e.g. @channelname or t.me/channelname): ").strip()
-    try:
-        entity = await client.get_entity(username)
-        print(f"Channel ID: {entity.id}")
-        print(f"Full ID (with -100 prefix for channels): -100{entity.id}" if hasattr(entity, 'broadcast') or hasattr(entity, 'megagroup') else "")
-    except Exception as e:
-        print(f"Error: {e}")
+    print("\n--- All Channels / Groups ---")
+    print(f"{'Name':<40} {'Channel ID':<20}")
+    print("-" * 60)
+    async for dialog in client.iter_dialogs():
+        if dialog.is_channel or dialog.is_group:
+            name = dialog.name or "(no name)"
+            cid = dialog.entity.id
+            # Channels/supergroups use -100 prefix in bot API style
+            if dialog.is_channel:
+                full_id = int(f"-100{cid}")
+            else:
+                full_id = -cid if cid > 0 else cid
+            print(f"{name:<40} {full_id:<20}")
+    print()
 
 
 async def create_task(client):
