@@ -158,9 +158,7 @@ async def send_copy(client, dest_id, message, modified_text, reply_to=None):
 # ---------- Async CLI functions ----------
 
 async def get_channel_id(client):
-    print("\n--- All Channels / Groups ---")
-    print(f"{'Name':<40} {'Channel ID':<20}")
-    print("-" * 60)
+    rows = []
     async for dialog in client.iter_dialogs():
         if dialog.is_channel or dialog.is_group:
             name = dialog.name or "(no name)"
@@ -169,7 +167,13 @@ async def get_channel_id(client):
                 full_id = int(f"-100{cid}")
             else:
                 full_id = -cid if cid > 0 else cid
-            print(f"{name:<40} {full_id:<20}")
+            rows.append((name, full_id))
+    rows.sort(key=lambda r: r[0].lower())
+    print("\n--- All Channels / Groups ---")
+    print(f"{'Name':<40} {'Channel ID':<20}")
+    print("-" * 60)
+    for name, full_id in rows:
+        print(f"{name:<40} {full_id:<20}")
     print()
 
 
