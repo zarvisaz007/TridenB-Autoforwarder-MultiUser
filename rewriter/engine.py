@@ -20,6 +20,7 @@ async def rewrite_text(text, prompt=None, provider=None):
     else:
         providers = REWRITE_CONFIG["provider_order"]
 
+    last_error = None
     for prov in providers:
         try:
             if prov == "ollama":
@@ -29,9 +30,11 @@ async def rewrite_text(text, prompt=None, provider=None):
             else:
                 continue
 
-            if result and not result.startswith("[") and len(result) > 10:
+            if result and result.strip() and not result.startswith("["):
                 return result
-        except Exception:
+            last_error = f"{prov}: empty or error response"
+        except Exception as e:
+            last_error = f"{prov}: {e}"
             continue
 
     return text  # fallback: return original

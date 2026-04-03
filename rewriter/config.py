@@ -17,7 +17,7 @@ REWRITE_CONFIG = {
     "provider_order": ["ollama", "openrouter"],  # fallback chain
     "ollama": {
         "url": "http://127.0.0.1:11434/api/generate",
-        "model": os.getenv("OLLAMA_REWRITE_MODEL", "gemma3:1b"),
+        "model": os.getenv("OLLAMA_REWRITE_MODEL", "qwen2.5:1.5b"),
         "timeout": 120,
     },
     "openrouter": {
