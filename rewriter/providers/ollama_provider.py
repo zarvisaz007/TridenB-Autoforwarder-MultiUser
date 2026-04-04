@@ -16,7 +16,7 @@ async def ollama_rewrite(text, system_prompt):
             {"role": "user", "content": text},
         ],
         "stream": False,
-        "keep_alive": "30s",
+        "keep_alive": "60s",
     }
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})

@@ -657,37 +657,8 @@ async def start_forwarder(client):
         if event.message.reply_to and event.message.reply_to.reply_to_msg_id:
             reply_to_src_id = event.message.reply_to.reply_to_msg_id
 
-        async def process_task(task, reply_to_src_id):
-            if task["id"] in paused_task_ids:
-                add_log(f"  [PAUSED] '{task['name']}' skipped")
-                return
-
-            # Loop protection
-            if check_loop(task["id"]):
-                paused_task_ids.add(task["id"])
-                add_log(f"  [LOOP] '{task['name']}' fired {LOOP_LIMIT}x in {LOOP_WINDOW}s — auto-paused!")
-                return
-
-            should_forward, modified_text = apply_filters(event.message, task["filters"])
-            if not should_forward:
-                add_log(f"  [SKIP] '{task['name']}' — filtered")
-                return
-
-            if task.get("filters", {}).get("rewrite_enabled"):
-                text_to_rewrite = modified_text if modified_text is not None else getattr(event.message, 'text', '')
-                if text_to_rewrite and text_to_rewrite.strip():
-                    try:
-                        prompt = task.get("filters", {}).get("rewrite_prompt", None)
-                        add_log(f"  [AI] '{task['name']}' rewriting text...")
-                        rewritten = await rewrite_text(text_to_rewrite, prompt=prompt)
-                        if rewritten != text_to_rewrite:
-                            modified_text = rewritten
-                            add_log(f"  [AI OK] Rewrote {len(text_to_rewrite)} \u2192 {len(rewritten)} chars")
-                        else:
-                            add_log(f"  [AI WARN] Rewrite returned original text (all providers failed)")
-                    except Exception as e:
-                        add_log(f"  [AI ERR] {e}")
-
+        async def do_forward(task, modified_text, reply_to_src_id):
+            """Forward message to all destinations (called after optional rewrite)."""
             delay = task.get("filters", {}).get("delay_seconds", 0)
             if delay > 0:
                 add_log(f"  [DELAY] '{task['name']}' waiting {delay}s")
@@ -723,6 +694,46 @@ async def start_forwarder(client):
                     add_log(f"  [ERR] '{task['name']}' → {dest_id}: {e}")
 
             await asyncio.gather(*[send_to_dest(d) for d in dest_ids])
+
+        async def rewrite_and_forward(task, modified_text, reply_to_src_id):
+            """Background: rewrite text then forward. Runs independently from other tasks."""
+            text_to_rewrite = modified_text if modified_text is not None else getattr(event.message, 'text', '')
+            if text_to_rewrite and text_to_rewrite.strip():
+                try:
+                    prompt = task.get("filters", {}).get("rewrite_prompt", None)
+                    add_log(f"  [AI] '{task['name']}' rewriting text...")
+                    rewritten = await rewrite_text(text_to_rewrite, prompt=prompt)
+                    if rewritten != text_to_rewrite:
+                        modified_text = rewritten
+                        add_log(f"  [AI OK] Rewrote {len(text_to_rewrite)} → {len(rewritten)} chars")
+                    else:
+                        add_log(f"  [AI WARN] Rewrite returned original text (all providers failed)")
+                except Exception as e:
+                    add_log(f"  [AI ERR] {e}")
+            await do_forward(task, modified_text, reply_to_src_id)
+
+        async def process_task(task, reply_to_src_id):
+            if task["id"] in paused_task_ids:
+                add_log(f"  [PAUSED] '{task['name']}' skipped")
+                return
+
+            # Loop protection
+            if check_loop(task["id"]):
+                paused_task_ids.add(task["id"])
+                add_log(f"  [LOOP] '{task['name']}' fired {LOOP_LIMIT}x in {LOOP_WINDOW}s — auto-paused!")
+                return
+
+            should_forward, modified_text = apply_filters(event.message, task["filters"])
+            if not should_forward:
+                add_log(f"  [SKIP] '{task['name']}' — filtered")
+                return
+
+            if task.get("filters", {}).get("rewrite_enabled"):
+                # AI rewrite runs in a separate background task — doesn't block other tasks
+                asyncio.create_task(rewrite_and_forward(task, modified_text, reply_to_src_id))
+            else:
+                # Non-rewrite: forward immediately
+                await do_forward(task, modified_text, reply_to_src_id)
 
         for task in tasks_for_src:
             asyncio.create_task(process_task(task, reply_to_src_id))
@@ -761,25 +772,37 @@ async def start_forwarder(client):
             return
         sid = get_sid(event.chat_id) if event.chat_id else None
 
-        # If chat_id is unknown or not a watched source, try DB fallback by msg ID
+        # If chat_id is known but not a watched source, ignore
         if sid and sid not in watched_source_ids:
-            return  # deletion happened in a channel we don't care about
+            return
 
-        async def delete_one(deleted_id):
+        # Collect ALL dest messages for ALL deleted source IDs in one pass
+        to_delete = {}  # dest_channel_id -> set of dest_message_ids
+        for deleted_id in event.deleted_ids:
             entries = await asyncio.to_thread(db.remove_messages, sid, deleted_id)
             if not entries:
-                return
-            add_log(f"DEL chat={event.chat_id} msg={deleted_id} (matched {len(entries)} dest)")
+                # Fallback: try without sid (handles chat_id=None case)
+                if sid is not None:
+                    entries = await asyncio.to_thread(db.remove_messages, None, deleted_id)
+            if not entries:
+                continue
+            add_log(f"DEL msg={deleted_id} (matched {len(entries)} dest)")
             for entry in entries:
                 if entry["task_id"] in paused_task_ids:
                     continue
-                try:
-                    await client.delete_messages(entry["dest_channel_id"], [entry["dest_message_id"]])
-                    add_log(f"  [DEL OK] → {entry['dest_channel_id']} msg {entry['dest_message_id']}")
-                except Exception as e:
-                    add_log(f"  [DEL ERR] {entry['dest_channel_id']}: {e}")
+                dest_ch = entry["dest_channel_id"]
+                to_delete.setdefault(dest_ch, set()).add(entry["dest_message_id"])
 
-        await asyncio.gather(*[delete_one(did) for did in event.deleted_ids])
+        # Batch-delete per destination channel (one API call per channel)
+        async def batch_delete(dest_ch, msg_ids):
+            try:
+                await client.delete_messages(dest_ch, list(msg_ids))
+                add_log(f"  [DEL OK] → {dest_ch} ({len(msg_ids)} msg{'s' if len(msg_ids) > 1 else ''})")
+            except Exception as e:
+                add_log(f"  [DEL ERR] {dest_ch}: {e}")
+
+        if to_delete:
+            await asyncio.gather(*[batch_delete(ch, ids) for ch, ids in to_delete.items()])
 
     async def cmd_delete_handler(event):
         global cancel_deletion
