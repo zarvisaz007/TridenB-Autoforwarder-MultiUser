@@ -5,5 +5,7 @@ __pycache__/
 tasks.json
 message_map.json
 autoforwarder.db
+report_schedules.json
+report_*.md
 Archive.zip
 .DS_Store

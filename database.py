@@ -161,6 +161,27 @@ class DatabaseHandler:
         ''', (task_id, limit))
         return [dict(row) for row in self.cursor.fetchall()]
 
+    def get_messages_by_date_range(self, source_channel_id, start_ts, end_ts):
+        """Fetch all messages for a source channel within a timestamp range."""
+        self.cursor.execute('''
+            SELECT text_content, timestamp, has_image FROM messages
+            WHERE source_channel_id = ? AND timestamp >= ? AND timestamp <= ?
+            AND text_content != ''
+            ORDER BY timestamp ASC
+        ''', (source_channel_id, start_ts, end_ts))
+        return [dict(row) for row in self.cursor.fetchall()]
+
+    def get_source_channels(self):
+        """Get distinct source channel IDs that have messages."""
+        self.cursor.execute('''
+            SELECT DISTINCT source_channel_id, count(id) as msg_count,
+                   min(timestamp) as first_msg, max(timestamp) as last_msg
+            FROM messages
+            WHERE text_content != ''
+            GROUP BY source_channel_id
+        ''')
+        return [dict(row) for row in self.cursor.fetchall()]
+
     def get_threads(self, limit=50):
         self.cursor.execute('''
             SELECT a.task_id, a.dest_channel_id, a.dest_message_id, a.text_content, a.timestamp as parent_time,

@@ -11,6 +11,9 @@ from telethon import TelegramClient, events
 from telethon.errors import FloodWaitError
 from database import db
 from rewriter import rewrite_text
+from reports import generate_report, ReportScheduler
+from reports.scheduler import create_schedule, list_schedules, delete_schedule, toggle_schedule
+from reports.config import REPORT_CONFIG
 
 # ---------- Colors ----------
 def c(text, code): return f"\033[{code}m{text}\033[0m"
@@ -36,6 +39,7 @@ active_handlers = []       # (func, event_class) for cleanup on stop
 cleanup_task = None
 keepalive_task = None
 cancel_deletion = False
+report_scheduler = None
 
 
 # ---------- Sync helpers ----------
@@ -887,15 +891,19 @@ async def start_forwarder(client):
 
     forwarder_active = True
 
-    global cleanup_task, keepalive_task
+    global cleanup_task, keepalive_task, report_scheduler
     cleanup_task = asyncio.create_task(image_cleanup_loop())
     keepalive_task = asyncio.create_task(keepalive_loop())
+
+    # Start report scheduler in background
+    report_scheduler = ReportScheduler(db, log_fn=add_log)
+    report_scheduler.start()
 
     add_log(f"Forwarder STARTED — watching {len(resolved_entities)} source(s), {len(enabled)} task(s).")
 
 
 async def stop_forwarder(client):
-    global forwarder_active, active_handlers, cleanup_task, keepalive_task
+    global forwarder_active, active_handlers, cleanup_task, keepalive_task, report_scheduler
 
     if not forwarder_active:
         print("Forwarder is not running.")
@@ -907,6 +915,9 @@ async def stop_forwarder(client):
     if keepalive_task:
         keepalive_task.cancel()
         keepalive_task = None
+    if report_scheduler:
+        report_scheduler.stop()
+        report_scheduler = None
 
     for func, event_type in active_handlers:
         client.remove_event_handler(func, event_type)
@@ -1030,49 +1041,277 @@ async def view_threads():
         print(f"  └─ Replies: {row['reply_count']} (Latest: {rtime})")
     print()
 
-async def generate_finance_report():
+async def _select_channel_for_report():
+    """Helper: let user pick a source channel from known channels or enter manually."""
+    channels = db.get_source_channels()
     tasks_data = load_tasks().get("tasks", [])
-    if not tasks_data:
-        print("No tasks available.")
-        return
-        
-    print("\nSelect task to generate report for:")
-    for i, t in enumerate(tasks_data):
-        print(f"  {i+1}. {t['name']}")
-        
-    choice = (await ainput("\nEnter task number: ")).strip()
-    if not choice.isdigit() or not (1 <= int(choice) <= len(tasks_data)):
-        print("Invalid choice.")
-        return
-        
-    task = tasks_data[int(choice)-1]
-    amount = (await ainput("How many recent messages to analyze? [50]: ")).strip()
-    limit = int(amount) if amount.isdigit() else 50
-    
-    task_msgs = db.get_recent_messages(task['id'], limit)
 
-    if not task_msgs:
-        print("No recent messages found for this task.")
+    # Build a merged list: tasks + DB channels
+    options = []
+    seen = set()
+    for t in tasks_data:
+        sid = t["source_channel_id"]
+        if sid not in seen:
+            options.append({"id": sid, "name": t["name"]})
+            seen.add(sid)
+    for ch in channels:
+        if ch["source_channel_id"] not in seen:
+            options.append({"id": ch["source_channel_id"], "name": f"Channel {ch['source_channel_id']}"})
+            seen.add(ch["source_channel_id"])
+
+    if not options:
+        print("No channels found. Create a task first.")
+        return None, None
+
+    print("\n  Select source channel:")
+    for i, opt in enumerate(options):
+        ch_info = next((c for c in channels if c["source_channel_id"] == opt["id"]), None)
+        msg_count = ch_info["msg_count"] if ch_info else 0
+        print(f"    {cyan(str(i+1))}. {opt['name']} ({opt['id']}) — {msg_count} msgs in DB")
+    print(f"    {cyan(str(len(options)+1))}. Enter channel ID manually")
+
+    choice = (await ainput("  Choice: ")).strip()
+    if not choice.isdigit():
+        print("  Invalid.")
+        return None, None
+
+    idx = int(choice)
+    if idx == len(options) + 1:
+        raw = (await ainput("  Channel ID: ")).strip()
+        try:
+            return int(raw), f"Channel {raw}"
+        except ValueError:
+            print("  Invalid ID.")
+            return None, None
+    if 1 <= idx <= len(options):
+        return options[idx-1]["id"], options[idx-1]["name"]
+    print("  Invalid choice.")
+    return None, None
+
+
+async def _select_report_type():
+    """Helper: let user pick a report type."""
+    types = REPORT_CONFIG["report_types"]
+    keys = list(types.keys())
+
+    print("\n  Report type:")
+    for i, key in enumerate(keys):
+        print(f"    {cyan(str(i+1))}. {types[key]['name']}")
+
+    choice = (await ainput("  Choice: ")).strip()
+    if not choice.isdigit() or not (1 <= int(choice) <= len(keys)):
+        print("  Invalid. Using 'Market Summary'.")
+        return "summary", None
+
+    key = keys[int(choice) - 1]
+    custom_prompt = None
+    if key == "custom":
+        custom_prompt = (await ainput("  Enter your custom prompt: ")).strip()
+        if not custom_prompt:
+            print("  Empty prompt. Cancelled.")
+            return None, None
+    return key, custom_prompt
+
+
+async def report_one_time():
+    """Generate a one-time report for any channel and date range."""
+    print(f"\n{bold('--- One-Time Report ---')}")
+
+    channel_id, channel_name = await _select_channel_for_report()
+    if channel_id is None:
         return
 
-    print(f"\nGathering {len(task_msgs)} messages. Sending to OpenRouter AI...")
-    combined_text = "\n\n---\n\n".join([f"Time: {time.strftime('%Y-%m-%d %H:%M', time.localtime(msg['timestamp']))}\n{msg['text_content']}" for msg in task_msgs])
+    days_raw = (await ainput("  Days to look back [7]: ")).strip()
+    lookback_days = int(days_raw) if days_raw.isdigit() and int(days_raw) > 0 else 7
 
-    system_prompt = (
-        "You are an expert financial analyst. Review the provided trading signals and messages. "
-        "Extract key information such as: Buy/Sell targets, Stop Losses, Hit Targets, and overall performance. "
-        "Summarize it into a concise, professional, Markdown-formatted financial report. "
-        "Ignore memes, chatter, or irrelevant links."
-    )
-    
+    report_type, custom_prompt = await _select_report_type()
+    if report_type is None:
+        return
+
+    now = int(time.time())
+    start_ts = now - (lookback_days * 86400)
+    messages = db.get_messages_by_date_range(channel_id, start_ts, now)
+
+    if not messages:
+        print(f"\n  No messages found for last {lookback_days} day(s).")
+        return
+
+    print(f"\n  Found {green(str(len(messages)))} messages. Generating report with Ollama...")
+    print(dim(f"  (model: {REPORT_CONFIG['ollama']['model']}, this runs in background — low RAM impact)\n"))
+
+    def progress(msg):
+        print(f"  {dim(msg)}")
+
     try:
-        import openrouter_client
-        report = await openrouter_client.generate_with_openrouter(combined_text, system_prompt=system_prompt)
-        print("\n================ FINANCIAL REPORT ================\n")
+        report = await generate_report(
+            messages,
+            report_type=report_type,
+            custom_prompt=custom_prompt,
+            progress_cb=progress
+        )
+        print(f"\n{bold(cyan('================== FINANCE REPORT =================='))}\n")
         print(report)
-        print("\n==================================================\n")
+        print(f"\n{bold(cyan('===================================================='))}\n")
+
+        save = (await ainput("  Save report to file? [y/N]: ")).strip().lower()
+        if save in ("y", "yes"):
+            filename = f"report_{channel_name}_{time.strftime('%Y%m%d_%H%M%S')}.md".replace(" ", "_")
+            with open(filename, "w") as f:
+                f.write(f"# Finance Report — {channel_name}\n")
+                f.write(f"Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"Period: last {lookback_days} day(s) | Messages: {len(messages)}\n\n")
+                f.write(report)
+            print(f"  Saved to {green(filename)}")
     except Exception as e:
-        print(f"Error communicating with OpenRouter: {e}")
+        print(f"  {red(f'Error: {e}')}")
+
+
+async def report_recurring_menu():
+    """Manage recurring (scheduled) reports."""
+    while True:
+        schedules = list_schedules()
+        print(f"\n{bold('--- Recurring Reports ---')}")
+        if schedules:
+            print(f"\n  {'ID':<5} {'Channel':<25} {'Freq':<10} {'Time':<8} {'Type':<18} {'Enabled':<9} {'Next Run'}")
+            print(f"  {'-'*90}")
+            for s in schedules:
+                next_run = time.strftime("%Y-%m-%d %H:%M", time.localtime(s["next_run"])) if s.get("next_run") else "—"
+                enabled = green("Yes") if s.get("enabled") else red("No")
+                rtype = REPORT_CONFIG["report_types"].get(s.get("report_type", "summary"), {}).get("name", s.get("report_type", "?"))
+                print(f"  {s['id']:<5} {s.get('channel_name', '?'):<25} {s['frequency']:<10} {s.get('time_of_day', '?'):<8} {rtype:<18} {enabled:<9} {next_run}")
+        else:
+            print(f"\n  {dim('No recurring reports configured.')}")
+
+        print(f"\n  {cyan('1.')} Create new schedule")
+        print(f"  {cyan('2.')} Toggle enable/disable")
+        print(f"  {cyan('3.')} Delete schedule")
+        print(f"  {cyan('4.')} View last generated report")
+        print(f"  {cyan('5.')} Run a schedule now (manual trigger)")
+        print(f"  {cyan('0.')} Back")
+
+        choice = (await ainput("\n  Choice: ")).strip()
+
+        if choice == "1":
+            await _create_recurring_report()
+        elif choice == "2":
+            sid_raw = (await ainput("  Schedule ID to toggle: ")).strip()
+            if sid_raw.isdigit():
+                result = toggle_schedule(int(sid_raw))
+                if result:
+                    state = green("enabled") if result["enabled"] else red("disabled")
+                    print(f"  Schedule {result['id']} is now {state}")
+                else:
+                    print("  Schedule not found.")
+        elif choice == "3":
+            sid_raw = (await ainput("  Schedule ID to delete: ")).strip()
+            if sid_raw.isdigit():
+                delete_schedule(int(sid_raw))
+                print(f"  Deleted.")
+        elif choice == "4":
+            if report_scheduler:
+                sid_raw = (await ainput("  Schedule ID: ")).strip()
+                if sid_raw.isdigit():
+                    last = report_scheduler.get_last_report(int(sid_raw))
+                    if last:
+                        print(f"\n{bold(cyan('================== LAST REPORT =================='))}\n")
+                        print(f"  Generated: {time.strftime('%Y-%m-%d %H:%M', time.localtime(last['generated_at']))}")
+                        print(f"  Messages analyzed: {last['message_count']}\n")
+                        print(last["text"])
+                        print(f"\n{bold(cyan('================================================='))}\n")
+                    else:
+                        print("  No report generated yet for this schedule.")
+            else:
+                print(f"  {yellow('Report scheduler not running. Start the forwarder first.')}")
+        elif choice == "5":
+            if report_scheduler:
+                sid_raw = (await ainput("  Schedule ID to run now: ")).strip()
+                if sid_raw.isdigit():
+                    schedules = list_schedules()
+                    sched = next((s for s in schedules if s["id"] == int(sid_raw)), None)
+                    if sched:
+                        print(f"  Running report in background...")
+                        asyncio.create_task(report_scheduler._run_report(sched))
+                    else:
+                        print("  Schedule not found.")
+            else:
+                print(f"  {yellow('Report scheduler not running. Start the forwarder first.')}")
+        elif choice == "0":
+            break
+
+
+async def _create_recurring_report():
+    """Interactive creation of a new recurring report schedule."""
+    print(f"\n  {bold('Create Recurring Report')}")
+
+    channel_id, channel_name = await _select_channel_for_report()
+    if channel_id is None:
+        return
+
+    print("\n  Frequency:")
+    print(f"    {cyan('1.')} Daily")
+    print(f"    {cyan('2.')} Weekly")
+    print(f"    {cyan('3.')} Monthly")
+    freq_choice = (await ainput("  Choice [1]: ")).strip()
+    freq_map = {"1": "daily", "2": "weekly", "3": "monthly"}
+    frequency = freq_map.get(freq_choice, "daily")
+
+    time_of_day = (await ainput("  Time of day (HH:MM, 24h) [08:00]: ")).strip() or "08:00"
+
+    day_of_week = None
+    day_of_month = None
+    if frequency == "weekly":
+        print("  Day of week: 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri, 5=Sat, 6=Sun")
+        dow_raw = (await ainput("  Day [0]: ")).strip()
+        day_of_week = int(dow_raw) if dow_raw.isdigit() and 0 <= int(dow_raw) <= 6 else 0
+    elif frequency == "monthly":
+        dom_raw = (await ainput("  Day of month [1]: ")).strip()
+        day_of_month = int(dom_raw) if dom_raw.isdigit() and 1 <= int(dom_raw) <= 31 else 1
+
+    default_lookback = {"daily": 1, "weekly": 7, "monthly": 30}[frequency]
+    lookback_raw = (await ainput(f"  Days of data to analyze [{default_lookback}]: ")).strip()
+    lookback_days = int(lookback_raw) if lookback_raw.isdigit() and int(lookback_raw) > 0 else default_lookback
+
+    report_type, custom_prompt = await _select_report_type()
+    if report_type is None:
+        return
+
+    schedule = create_schedule(
+        source_channel_id=channel_id,
+        channel_name=channel_name,
+        frequency=frequency,
+        time_of_day=time_of_day,
+        report_type=report_type,
+        custom_prompt=custom_prompt,
+        day_of_week=day_of_week,
+        day_of_month=day_of_month,
+        lookback_days=lookback_days,
+    )
+
+    next_run = time.strftime("%Y-%m-%d %H:%M", time.localtime(schedule["next_run"]))
+    print(f"\n  {green('Schedule created!')} ID: {schedule['id']}, next run: {next_run}")
+    if forwarder_active and report_scheduler:
+        print(f"  {dim('Scheduler is running — report will auto-generate on schedule.')}")
+    else:
+        print(f"  {yellow('Start the forwarder (option 7) for the scheduler to run.')}")
+
+
+async def finance_report_menu():
+    """Main entry point for option 14 — AI Finance Reports."""
+    while True:
+        print(f"\n{bold(cyan('=== AI Finance Reports ==='))}")
+        model_name = REPORT_CONFIG["ollama"]["model"]
+        print(f"  {dim(f'Model: {model_name} (local Ollama, low RAM)')}")
+        print(f"\n  {cyan('1.')} One-Time Report (generate now)")
+        print(f"  {cyan('2.')} Recurring Reports (scheduled)")
+        print(f"  {cyan('0.')} Back to main menu")
+
+        choice = (await ainput("\n  Choice: ")).strip()
+        if choice == "1":
+            await report_one_time()
+        elif choice == "2":
+            await report_recurring_menu()
+        elif choice == "0":
+            break
 
 async def export_tasks():
     data = load_tasks()
@@ -1149,7 +1388,7 @@ async def main_menu(client):
         print(f"  {cyan('10.')} View Logs")
         print(f"  {cyan('12.')} View Statistics")
         print(f"  {cyan('13.')} View Message Threads (Replies)")
-        print(f"  {cyan('14.')} Generate AI Finance Report")
+        print(f"  {cyan('14.')} AI Finance Reports")
         print(dim("─────────────────────────────────────────────"))
         print(f"  {cyan('15.')} Export Tasks")
         print(f"  {cyan('16.')} Import Tasks")
@@ -1185,7 +1424,7 @@ async def main_menu(client):
         elif choice == "13":
             await view_threads()
         elif choice == "14":
-            await generate_finance_report()
+            await finance_report_menu()
         elif choice == "15":
             await export_tasks()
         elif choice == "16":
