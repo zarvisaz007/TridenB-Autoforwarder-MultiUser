@@ -1113,7 +1113,7 @@ async def _select_report_type():
     return key, custom_prompt
 
 
-async def report_one_time():
+async def report_one_time(client):
     """Generate a one-time report for any channel and date range."""
     print(f"\n{bold('--- One-Time Report ---')}")
 
@@ -1128,9 +1128,25 @@ async def report_one_time():
     if report_type is None:
         return
 
+    # Fetch messages directly from Telegram (works for any channel the account is in)
+    print(f"\n  Fetching messages from Telegram (last {lookback_days} days)...")
     now = int(time.time())
-    start_ts = now - (lookback_days * 86400)
-    messages = db.get_messages_by_date_range(channel_id, start_ts, now)
+    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=lookback_days)
+    messages = []
+    try:
+        async for msg in client.iter_messages(channel_id, offset_date=cutoff, reverse=True, limit=2000):
+            text = msg.text or ""
+            if text.strip():
+                messages.append({
+                    "text_content": text,
+                    "timestamp": int(msg.date.timestamp()),
+                    "has_image": 1 if msg.photo else 0,
+                })
+    except Exception as e:
+        print(f"  {yellow(f'Telegram fetch failed: {e}')}")
+        print(f"  Falling back to local DB...")
+        start_ts = now - (lookback_days * 86400)
+        messages = db.get_messages_by_date_range(channel_id, start_ts, now)
 
     if not messages:
         print(f"\n  No messages found for last {lookback_days} day(s).")
@@ -1295,7 +1311,7 @@ async def _create_recurring_report():
         print(f"  {yellow('Start the forwarder (option 7) for the scheduler to run.')}")
 
 
-async def finance_report_menu():
+async def finance_report_menu(client):
     """Main entry point for option 14 — AI Finance Reports."""
     while True:
         print(f"\n{bold(cyan('=== AI Finance Reports ==='))}")
@@ -1307,7 +1323,7 @@ async def finance_report_menu():
 
         choice = (await ainput("\n  Choice: ")).strip()
         if choice == "1":
-            await report_one_time()
+            await report_one_time(client)
         elif choice == "2":
             await report_recurring_menu()
         elif choice == "0":
@@ -1424,7 +1440,7 @@ async def main_menu(client):
         elif choice == "13":
             await view_threads()
         elif choice == "14":
-            await finance_report_menu()
+            await finance_report_menu(client)
         elif choice == "15":
             await export_tasks()
         elif choice == "16":
