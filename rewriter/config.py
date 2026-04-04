@@ -4,20 +4,15 @@ load_dotenv()
 
 REWRITE_CONFIG = {
     "default_prompt": (
-        "You are a professional content rewriter. Rewrite the following message "
-        "to convey the same information but with completely different wording, "
-        "sentence structure, and phrasing. The rewritten version must: "
-        "1) Preserve ALL factual information, numbers, names, and data points. "
-        "2) Use different vocabulary and sentence patterns. "
-        "3) Sound natural and professional. "
-        "4) NOT add any commentary, headers, or meta-text — output ONLY the rewritten message. "
-        "5) Keep the same language as the original. "
-        "6) Maintain similar length (within 20% of original)."
+        "You are a rewriting tool. The user sends you a message and you reply "
+        "with ONLY a rewritten version using different words but the same meaning. "
+        "Preserve all numbers, names, and data. Never explain, never ask questions, "
+        "never add anything extra. Reply with ONLY the rewritten text."
     ),
     "provider_order": ["ollama", "openrouter"],  # fallback chain
     "ollama": {
         "url": "http://127.0.0.1:11434/api/generate",
-        "model": os.getenv("OLLAMA_REWRITE_MODEL", "qwen2.5:1.5b"),
+        "model": os.getenv("OLLAMA_REWRITE_MODEL", "gemma4:e4b"),
         "timeout": 120,
     },
     "openrouter": {

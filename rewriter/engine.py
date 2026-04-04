@@ -12,7 +12,15 @@ async def rewrite_text(text, prompt=None, provider=None):
     if not text or not text.strip():
         return text
 
-    system_prompt = prompt or REWRITE_CONFIG["default_prompt"]
+    # Skip rewriting for very short messages (dots, emojis, single words)
+    stripped = text.strip()
+    if len(stripped) < 5 or not any(c.isalpha() for c in stripped):
+        return text
+
+    # Always use the default prompt as base; append custom instructions if provided
+    system_prompt = REWRITE_CONFIG["default_prompt"]
+    if prompt:
+        system_prompt += f"\n\nAdditional instruction: {prompt}"
 
     # If specific provider requested
     if provider:

@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from telethon import TelegramClient, events
 from telethon.errors import FloodWaitError
 from database import db
+from rewriter import rewrite_text
 
 # ---------- Colors ----------
 def c(text, code): return f"\033[{code}m{text}\033[0m"
@@ -33,6 +34,7 @@ loop_counter = {}          # task_id -> [timestamps]
 log_entries = []
 active_handlers = []       # (func, event_class) for cleanup on stop
 cleanup_task = None
+keepalive_task = None
 cancel_deletion = False
 
 
@@ -675,7 +677,6 @@ async def start_forwarder(client):
                 text_to_rewrite = modified_text if modified_text is not None else getattr(event.message, 'text', '')
                 if text_to_rewrite and text_to_rewrite.strip():
                     try:
-                        from rewriter import rewrite_text
                         prompt = task.get("filters", {}).get("rewrite_prompt", None)
                         add_log(f"  [AI] '{task['name']}' rewriting text...")
                         rewritten = await rewrite_text(text_to_rewrite, prompt=prompt)
@@ -693,16 +694,16 @@ async def start_forwarder(client):
                 await asyncio.sleep(delay)
 
             dest_ids = task.get("destination_channel_ids") or [task.get("destination_channel_id")]
-            for dest_id in dest_ids:
-                # Find the corresponding reply target in this destination (if any)
+
+            async def send_to_dest(dest_id):
                 reply_to_dest_id = None
                 if reply_to_src_id is not None:
                     reply_to_dest_id = db.get_reply_to_dest_id(task["id"], sid, reply_to_src_id, dest_id)
-
                 try:
                     sent = await send_copy(client, dest_id, event.message, modified_text, reply_to=reply_to_dest_id)
                     text_for_db = modified_text if modified_text is not None else (event.message.text or "")
-                    db.log_message(
+                    await asyncio.to_thread(
+                        db.log_message,
                         task_id=task["id"],
                         source_channel_id=sid,
                         source_message_id=event.message.id,
@@ -721,6 +722,8 @@ async def start_forwarder(client):
                 except Exception as e:
                     add_log(f"  [ERR] '{task['name']}' → {dest_id}: {e}")
 
+            await asyncio.gather(*[send_to_dest(d) for d in dest_ids])
+
         for task in tasks_for_src:
             asyncio.create_task(process_task(task, reply_to_src_id))
 
@@ -732,15 +735,15 @@ async def start_forwarder(client):
         if not entries:
             return
         add_log(f"EDIT chat={event.chat_id} msg={event.message.id}")
-        for entry in entries:
-            task = next((t for t in load_tasks().get("tasks", []) if t["id"] == entry["task_id"]), None)
-            if not task:
-                continue
-            if entry["task_id"] in paused_task_ids:
-                continue
+        current_tasks = (await asyncio.to_thread(load_tasks)).get("tasks", [])
+
+        async def edit_one(entry):
+            task = next((t for t in current_tasks if t["id"] == entry["task_id"]), None)
+            if not task or entry["task_id"] in paused_task_ids:
+                return
             should_forward, modified_text = apply_filters(event.message, task["filters"])
             if not should_forward:
-                continue
+                return
             new_text = modified_text if modified_text is not None else (event.message.text or "")
             try:
                 await client.edit_message(entry["dest_channel_id"], entry["dest_message_id"], text=new_text)
@@ -748,14 +751,16 @@ async def start_forwarder(client):
             except Exception as e:
                 add_log(f"  [EDIT ERR] {entry['dest_channel_id']}: {e}")
 
+        await asyncio.gather(*[edit_one(e) for e in entries])
+
     async def delete_handler(event):
         if not forwarder_active:
             return
         sid = get_sid(event.chat_id)
-        for deleted_id in event.deleted_ids:
-            entries = db.remove_messages(sid, deleted_id)
+        async def delete_one(deleted_id):
+            entries = await asyncio.to_thread(db.remove_messages, sid, deleted_id)
             if not entries:
-                continue
+                return
             add_log(f"DEL msg={deleted_id}")
             for entry in entries:
                 if entry["task_id"] in paused_task_ids:
@@ -765,6 +770,8 @@ async def start_forwarder(client):
                     add_log(f"  [DEL OK] → {entry['dest_channel_id']} msg {entry['dest_message_id']}")
                 except Exception as e:
                     add_log(f"  [DEL ERR] {entry['dest_channel_id']}: {e}")
+
+        await asyncio.gather(*[delete_one(did) for did in event.deleted_ids])
 
     async def cmd_delete_handler(event):
         global cancel_deletion
@@ -838,15 +845,25 @@ async def start_forwarder(client):
                 add_log(f"  [CLEANUP LOOP ERR] {e}")
             await asyncio.sleep(3600)
 
-    global cleanup_task
+    async def keepalive_loop():
+        """Ping Telegram every 30s to keep the MTProto connection alive and updates flowing."""
+        while forwarder_active:
+            try:
+                await client.get_me()
+            except Exception:
+                pass
+            await asyncio.sleep(30)
+
+    global cleanup_task, keepalive_task
     cleanup_task = asyncio.create_task(image_cleanup_loop())
+    keepalive_task = asyncio.create_task(keepalive_loop())
 
     forwarder_active = True
     add_log(f"Forwarder STARTED — watching {len(resolved_entities)} source(s), {len(enabled)} task(s).")
 
 
 async def stop_forwarder(client):
-    global forwarder_active, active_handlers, cleanup_task
+    global forwarder_active, active_handlers, cleanup_task, keepalive_task
 
     if not forwarder_active:
         print("Forwarder is not running.")
@@ -855,6 +872,9 @@ async def stop_forwarder(client):
     if cleanup_task:
         cleanup_task.cancel()
         cleanup_task = None
+    if keepalive_task:
+        keepalive_task.cancel()
+        keepalive_task = None
 
     for func, event_type in active_handlers:
         client.remove_event_handler(func, event_type)
