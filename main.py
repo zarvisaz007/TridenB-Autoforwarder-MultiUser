@@ -753,15 +753,23 @@ async def start_forwarder(client):
 
         await asyncio.gather(*[edit_one(e) for e in entries])
 
+    # Set of all watched source channel IDs for manual filtering in delete handler
+    watched_source_ids = set(source_to_tasks.keys())
+
     async def delete_handler(event):
         if not forwarder_active:
             return
-        sid = get_sid(event.chat_id)
+        sid = get_sid(event.chat_id) if event.chat_id else None
+
+        # If chat_id is unknown or not a watched source, try DB fallback by msg ID
+        if sid and sid not in watched_source_ids:
+            return  # deletion happened in a channel we don't care about
+
         async def delete_one(deleted_id):
             entries = await asyncio.to_thread(db.remove_messages, sid, deleted_id)
             if not entries:
                 return
-            add_log(f"DEL msg={deleted_id}")
+            add_log(f"DEL chat={event.chat_id} msg={deleted_id} (matched {len(entries)} dest)")
             for entry in entries:
                 if entry["task_id"] in paused_task_ids:
                     continue
@@ -808,7 +816,7 @@ async def start_forwarder(client):
     # Register handlers
     client.add_event_handler(new_handler, events.NewMessage(chats=resolved_entities))
     client.add_event_handler(edit_handler, events.MessageEdited(chats=resolved_entities))
-    client.add_event_handler(delete_handler, events.MessageDeleted(chats=resolved_entities))
+    client.add_event_handler(delete_handler, events.MessageDeleted())
     client.add_event_handler(cmd_delete_handler, events.NewMessage(pattern=r"^\.\.delete$"))
     client.add_event_handler(cmd_stop_handler, events.NewMessage(pattern=r"^\.\.stop$"))
 
@@ -846,19 +854,20 @@ async def start_forwarder(client):
             await asyncio.sleep(3600)
 
     async def keepalive_loop():
-        """Ping Telegram every 30s to keep the MTProto connection alive and updates flowing."""
+        """Ping Telegram every 10s and force-fetch pending updates to prevent delivery lag."""
         while forwarder_active:
             try:
-                await client.get_me()
+                await client.catch_up()
             except Exception:
                 pass
-            await asyncio.sleep(30)
+            await asyncio.sleep(10)
+
+    forwarder_active = True
 
     global cleanup_task, keepalive_task
     cleanup_task = asyncio.create_task(image_cleanup_loop())
     keepalive_task = asyncio.create_task(keepalive_loop())
 
-    forwarder_active = True
     add_log(f"Forwarder STARTED — watching {len(resolved_entities)} source(s), {len(enabled)} task(s).")
 
 
