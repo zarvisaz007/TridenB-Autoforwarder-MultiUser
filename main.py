@@ -40,6 +40,7 @@ cleanup_task = None
 keepalive_task = None
 cancel_deletion = False
 report_scheduler = None
+channel_name_cache = {}   # channel_id -> display name (resolved via Telethon)
 
 
 # ---------- Sync helpers ----------
@@ -316,31 +317,97 @@ async def create_task(client):
     print(f"\nTask '{name}' created with ID {task['id']}.")
 
 
-async def list_tasks():
+async def _resolve_channel_name(client, channel_id):
+    """Resolve a channel ID to its display name, with caching."""
+    if channel_id in channel_name_cache:
+        return channel_name_cache[channel_id]
+    if client is None:
+        return str(channel_id)
+    try:
+        entity = await client.get_entity(channel_id)
+        name = getattr(entity, 'title', None) or str(channel_id)
+        channel_name_cache[channel_id] = name
+        return name
+    except Exception:
+        return str(channel_id)
+
+
+async def list_tasks(client=None):
     data = load_tasks()
     tasks = data.get("tasks", [])
     if not tasks:
         print("No tasks found.")
         return
 
-    # Bold column headers (ANSI codes add invisible chars so we pad wider)
-    print(f"\n{bold('ID'):<14} {bold('Name'):<29} {bold('Enabled'):<17} {bold('Paused'):<17} {bold('Source'):<31} {bold('Destinations')}")
-    print("-" * 100)
+    # Collect all channel IDs to resolve
+    all_ids = set()
+    for t in tasks:
+        all_ids.add(t["source_channel_id"])
+        for d in t.get("destination_channel_ids", [t.get("destination_channel_id")]):
+            if d:
+                all_ids.add(d)
+
+    # Resolve names (only uncached ones hit Telegram)
+    if client:
+        for cid in all_ids:
+            if cid not in channel_name_cache:
+                await _resolve_channel_name(client, cid)
+
+    print(f"\n{bold(cyan('━━━ Forwarding Tasks ━━━'))}")
+    print()
     for t in tasks:
         enabled = t.get("enabled")
         is_paused = t["id"] in paused_task_ids
-        status_str = green("Yes") if enabled else red("No")
-        paused_str = yellow("Yes") if is_paused else "No"
+        status_str = green("● Enabled") if enabled else red("● Disabled")
+        paused_str = f"  {yellow('⏸ Paused')}" if is_paused else ""
+
         name_str = green(t['name']) if enabled else red(t['name'])
-        dests = ", ".join(str(d) for d in t.get("destination_channel_ids", [t.get("destination_channel_id", "?")]))
-        n_pad = " " * max(20 - len(t['name']), 1)
-        e_pad = " " * max(8 - 3, 1)
-        p_pad = " " * max(8 - 3, 1)
-        print(f"{t['id']:<5} {name_str}{n_pad}{status_str}{e_pad}{paused_str}{p_pad}{t['source_channel_id']:<22} {dests}")
+        src_id = t["source_channel_id"]
+        src_name = channel_name_cache.get(src_id, str(src_id))
+
+        dest_ids = t.get("destination_channel_ids", [t.get("destination_channel_id", "?")])
+        dest_parts = []
+        for d in dest_ids:
+            d_name = channel_name_cache.get(d, str(d))
+            if d_name != str(d):
+                dest_parts.append(f"{d_name} {dim('(' + str(d) + ')')}")
+            else:
+                dest_parts.append(str(d))
+
+        print(f"  {bold(cyan('ID ' + str(t['id'])))}  {name_str}  {status_str}{paused_str}")
+        if src_name != str(src_id):
+            print(f"    {dim('Source:')}      {src_name} {dim('(' + str(src_id) + ')')}")
+        else:
+            print(f"    {dim('Source:')}      {src_id}")
+        for dp in dest_parts:
+            print(f"    {dim('Dest:')}        {dp}")
+
+        # Show key filters if any
+        filters = t.get("filters", {})
+        filter_tags = []
+        if filters.get("rewrite_enabled"):
+            filter_tags.append(cyan("AI Rewrite"))
+        if filters.get("blacklist_words"):
+            filter_tags.append("Blacklist")
+        if filters.get("whitelist_words"):
+            filter_tags.append("Whitelist")
+        if filters.get("clean_urls"):
+            filter_tags.append("No URLs")
+        if filters.get("clean_usernames"):
+            filter_tags.append("No @")
+        if filters.get("skip_images"):
+            filter_tags.append("No Images")
+        if filters.get("delay_seconds"):
+            delay_val = filters["delay_seconds"]
+            filter_tags.append(f"Delay {delay_val}s")
+        if filter_tags:
+            print(f"    {dim('Filters:')}     {dim(' | ').join(filter_tags)}")
+
+        print(f"  {dim('─' * 50)}")
 
 
-async def toggle_task():
-    await list_tasks()
+async def toggle_task(client=None):
+    await list_tasks(client)
     try:
         tid = int((await ainput("\nEnter task ID to toggle: ")).strip())
     except ValueError:
@@ -477,8 +544,8 @@ async def edit_filters_submenu(task, data):
             print("  Invalid option.")
 
 
-async def edit_task():
-    await list_tasks()
+async def edit_task(client=None):
+    await list_tasks(client)
     try:
         tid = int((await ainput("\nEnter task ID to edit: ")).strip())
     except ValueError:
@@ -560,8 +627,8 @@ async def edit_task():
             print("Invalid option.")
 
 
-async def duplicate_task():
-    await list_tasks()
+async def duplicate_task(client=None):
+    await list_tasks(client)
     try:
         tid = int((await ainput("\nEnter task ID to duplicate: ")).strip())
     except ValueError:
@@ -583,8 +650,8 @@ async def duplicate_task():
     print(f"Task '{task['name']}' duplicated as '{new_task['name']}' with ID {new_task['id']}.")
 
 
-async def delete_task():
-    await list_tasks()
+async def delete_task(client=None):
+    await list_tasks(client)
     try:
         tid = int((await ainput("\nEnter task ID to delete: ")).strip())
     except ValueError:
@@ -634,7 +701,9 @@ async def start_forwarder(client):
             entity = await client.get_entity(sid)
             resolved_entities.append(entity)
             resolved_ids[entity.id] = sid
-            print(f"  OK: {getattr(entity, 'title', sid)} (id={sid})")
+            title = getattr(entity, 'title', sid)
+            channel_name_cache[sid] = title
+            print(f"  OK: {title} (id={sid})")
         except Exception as e:
             print(f"  FAIL to resolve {sid}: {e}")
 
@@ -926,8 +995,8 @@ async def stop_forwarder(client):
     add_log("Forwarder STOPPED.")
 
 
-async def pause_task_menu():
-    await list_tasks()
+async def pause_task_menu(client=None):
+    await list_tasks(client)
     try:
         tid = int((await ainput("\nEnter task ID to pause/resume: ")).strip())
     except ValueError:
@@ -1418,23 +1487,23 @@ async def main_menu(client):
         elif choice == "2":
             await create_task(client)
         elif choice == "3":
-            await list_tasks()
+            await list_tasks(client)
         elif choice == "4":
-            await toggle_task()
+            await toggle_task(client)
         elif choice == "5":
-            await edit_task()
+            await edit_task(client)
         elif choice == "6":
-            await delete_task()
+            await delete_task(client)
         elif choice == "7":
             await start_forwarder(client)
         elif choice == "8":
             await stop_forwarder(client)
         elif choice == "9":
-            await pause_task_menu()
+            await pause_task_menu(client)
         elif choice == "10":
             await view_logs()
         elif choice == "11":
-            await duplicate_task()
+            await duplicate_task(client)
         elif choice == "12":
             await view_statistics()
         elif choice == "13":
