@@ -5,6 +5,9 @@ __pycache__/
 tasks.json
 message_map.json
 autoforwarder.db
+bot_data.db
+bot_data.db-shm
+bot_data.db-wal
 report_schedules.json
 report_*.md
 Archive.zip

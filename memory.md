@@ -43,7 +43,7 @@ V2 fully implemented. All 14 menu options working. SQLite DB tracks all forwarde
 ## Menu Options
 1.  Get Channel ID — lists all channels/groups
 2.  Create Forwarding Task — source + multiple destinations + filters
-3.  List Tasks — shows enabled/paused status
+3.  List Tasks — card-style display with channel names, status, filters
 4.  Toggle Task — enable/disable (persisted to tasks.json)
 5.  Edit Task — modify source, destinations, and filters
 6.  Delete Task
