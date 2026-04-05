@@ -18,43 +18,47 @@ LOG_FORMAT = "%(asctime)s [%(name)-18s] %(levelname)-5s %(message)s"
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 logging.basicConfig(level=logging.INFO, format=LOG_FORMAT, datefmt=DATE_FORMAT)
-# Quiet noisy libraries
 logging.getLogger("telethon").setLevel(logging.WARNING)
 logging.getLogger("aiogram").setLevel(logging.WARNING)
 logging.getLogger("aiosqlite").setLevel(logging.WARNING)
 
 logger = logging.getLogger("bot.main")
 
-# ─── Colors for terminal ───
+
+def green(t):
+    return "\033[32m{}\033[0m".format(t)
 
 
-def c(text, code):
-    return "\033[{}m{}\033[0m".format(code, text)
+def red(t):
+    return "\033[31m{}\033[0m".format(t)
 
 
-def green(t):  return c(t, "32")
-def red(t):    return c(t, "31")
-def yellow(t): return c(t, "33")
-def cyan(t):   return c(t, "36")
-def bold(t):   return c(t, "1")
-def dim(t):    return c(t, "2")
+def dim(t):
+    return "\033[2m{}\033[0m".format(t)
 
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 
+# Shared bot instance for CLI to send replies
+_bot_instance = None
+
 
 async def start_bot():
     """Start the Aiogram bot — runs forever until cancelled."""
+    global _bot_instance
+
     from aiogram import Bot, Dispatcher
     from bot_handlers import (
         auth, menu, tasks, forwarder_ctl, filters,
-        rewriting, statistics, reports, export_import, admin,
+        rewriting, statistics, reports, export_import, admin, queries,
     )
 
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher()
 
-    # Wire up admin module with dispatcher storage for cross-user FSM
+    _bot_instance = bot
+
+    # Wire up admin module
     admin.dp_storage = dp.storage
 
     async def _on_startup(bot_instance: Bot):
@@ -64,7 +68,7 @@ async def start_bot():
 
     dp.startup.register(_on_startup)
 
-    # Include all routers (order matters — auth first for /start)
+    # Include all routers
     dp.include_router(auth.router)
     dp.include_router(menu.router)
     dp.include_router(tasks.router)
@@ -75,6 +79,7 @@ async def start_bot():
     dp.include_router(reports.router)
     dp.include_router(export_import.router)
     dp.include_router(admin.router)
+    dp.include_router(queries.router)
 
     logger.info("Bot started polling...")
 
@@ -89,7 +94,6 @@ async def start_bot():
 
 
 async def main():
-    # Validate environment
     api_id = os.getenv("API_ID")
     api_hash = os.getenv("API_HASH")
 
@@ -116,12 +120,18 @@ async def main():
     # Start the bot in a background task
     bot_task = asyncio.create_task(start_bot())
 
+    # Small delay so bot_instance is set
+    await asyncio.sleep(1)
+
     print()
     print(green("  Bot started! Polling for messages in background."))
     print()
 
+    # Give CLI access to the bot instance for sending replies
+    from admin.cli import run_dashboard, set_bot
+    set_bot(_bot_instance)
+
     # Run interactive CLI admin dashboard
-    from admin_cli import run_dashboard
     await run_dashboard()
 
     # Dashboard exited — bot keeps running until Ctrl+C

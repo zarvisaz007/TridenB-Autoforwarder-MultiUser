@@ -70,6 +70,18 @@ async def init_db():
                 FOREIGN KEY(user_id) REFERENCES users(id)
             )
         ''')
+        await db.execute('''
+            CREATE TABLE IF NOT EXISTS queries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                phone TEXT DEFAULT '',
+                message TEXT,
+                reply TEXT,
+                created_at INTEGER,
+                replied_at INTEGER,
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            )
+        ''')
         await db.execute("CREATE INDEX IF NOT EXISTS idx_msg_src ON message_map(user_id, src_channel_id, src_msg_id)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_msg_src_only ON message_map(src_msg_id)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_msg_task ON message_map(task_id, user_id)")
@@ -473,4 +485,46 @@ async def toggle_report_schedule(schedule_id: int, user_id: int):
 async def delete_report_schedule(schedule_id: int, user_id: int):
     async with aiosqlite.connect(DB_FILE) as db:
         await db.execute("DELETE FROM report_schedules WHERE id = ? AND user_id = ?", (schedule_id, user_id))
+        await db.commit()
+
+
+# ─── Queries / Messages ───
+
+async def add_query(user_id: int, phone: str, message: str):
+    now = int(time.time())
+    async with aiosqlite.connect(DB_FILE) as db:
+        cursor = await db.execute(
+            "INSERT INTO queries (user_id, phone, message, created_at) VALUES (?, ?, ?, ?)",
+            (user_id, phone or "", message, now),
+        )
+        await db.commit()
+        return cursor.lastrowid
+
+
+async def get_all_queries(limit: int = 50):
+    async with aiosqlite.connect(DB_FILE) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM queries ORDER BY created_at DESC LIMIT ?", (limit,)
+        ) as cursor:
+            return [dict(r) for r in await cursor.fetchall()]
+
+
+async def get_user_queries(user_id: int, limit: int = 20):
+    async with aiosqlite.connect(DB_FILE) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM queries WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+            (user_id, limit),
+        ) as cursor:
+            return [dict(r) for r in await cursor.fetchall()]
+
+
+async def mark_query_replied(query_id: int, reply: str):
+    now = int(time.time())
+    async with aiosqlite.connect(DB_FILE) as db:
+        await db.execute(
+            "UPDATE queries SET reply = ?, replied_at = ? WHERE id = ?",
+            (reply, now, query_id),
+        )
         await db.commit()

@@ -15,9 +15,10 @@ def get_main_menu_kb():
     builder.button(text="🎛  Filters & AI", callback_data="cat_filters")
     builder.button(text="📊  Analytics", callback_data="cat_analytics")
     builder.button(text="📁  Import / Export", callback_data="cat_export")
+    builder.button(text="📩  Contact Admin", callback_data="m_query")
     builder.button(text="🛡  Admin Panel", callback_data="m_admin")
     builder.button(text="❌  Close", callback_data="m_close")
-    builder.adjust(2, 2, 2, 1, 1)
+    builder.adjust(2, 2, 2, 2)
     return builder.as_markup()
 
 
