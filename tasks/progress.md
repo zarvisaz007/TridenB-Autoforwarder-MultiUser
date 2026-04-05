@@ -1,6 +1,6 @@
 # Implementation Progress
 
-## Status: Multi-User Bot — Complete
+## Status: Multi-User Bot + Admin Dashboard — Complete
 
 ## Phase 1: CLI Autoforwarder (Complete)
 - [x] Telethon MTProto forwarding
@@ -29,14 +29,30 @@
 - [x] Admin terminal dashboard on startup
 
 ## Phase 3: Admin Panel & UI Polish (Complete)
-- [x] Admin panel in bot (users, tasks, stats, channels)
+- [x] Telegram admin panel (users, tasks, stats, channels)
 - [x] Channel overview with owner/admin roles + subscriber counts
-- [x] Channel ownership transfer (admin-only)
+- [x] Channel ownership transfer (admin-only, consent-based)
 - [x] Beautiful menu with icons and sub-categories
 - [x] Back navigation throughout all menus
 - [x] Confirmation dialogs for destructive actions
 - [x] Per-user processing stats
 - [x] GUIDE.md — complete user documentation
+
+## Phase 4: Interactive CLI Dashboard & Query System (Complete)
+- [x] Modular admin/ package (cli, views, helpers)
+- [x] Interactive drill-down user details (tasks, channels, ownership, stats, logs)
+- [x] Full phone numbers displayed (not masked) in CLI
+- [x] Usage stats per user (total/today/weekly messages, images)
+- [x] Pause/Resume all tasks for a single user from CLI
+- [x] Pause/Resume ALL tasks globally from CLI
+- [x] Live logs with auto-refresh (3s interval)
+- [x] Query/message system: users send queries via bot
+- [x] Admin reads and replies to queries from terminal
+- [x] Replies delivered back to users on Telegram
+- [x] "Contact Admin" button in user's main menu
+- [x] Unreplied query count on dashboard summary
+- [x] Bot runs as background asyncio task, CLI in foreground
+- [x] Single entry point: python3 run_bot.py starts everything
 
 ## Remaining / Future Ideas
 - [ ] Web dashboard (optional)

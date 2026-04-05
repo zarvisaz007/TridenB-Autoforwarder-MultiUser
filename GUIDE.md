@@ -62,6 +62,7 @@ After connecting, users see a categorized menu:
 | **Filters & AI** | Edit per-task filters, configure AI rewriting |
 | **Analytics** | Stats, message threads, logs, AI finance reports |
 | **Import/Export** | Backup and restore tasks as JSON files |
+| **Contact Admin** | Send queries/messages to the admin, view replies |
 | **Admin Panel** | (Admin only) User management, channel overview, transfers |
 
 ---
@@ -199,15 +200,40 @@ This lets the admin take ownership of a user's channel.
 
 ---
 
-## Terminal Dashboard
+## Admin CLI Dashboard
 
-When you run `python3 run_bot.py`, the terminal shows an admin dashboard:
-- Total users (connected, pending)
-- Total tasks across all users
-- Per-user table: ID, phone (masked), status, tasks, messages, last active
-- All tasks table: ID, user, name, source, destinations, status flags
+When you run `python3 run_bot.py`, the bot starts in the background and an interactive admin dashboard appears in your terminal.
 
-This updates every time you restart the bot.
+### Dashboard Menu
+| Option | What It Does |
+|--------|-------------|
+| **1 - Users Overview** | All users with full phone, status, client, tasks, messages. Enter a number to drill into a user |
+| **2 - All Tasks** | Every task across all users with source/dest and ON/OFF/PAUSED/AI status |
+| **3 - Global Stats** | Total messages, today count, images, active clients, per-user breakdown |
+| **4 - Channels** | Per-user channel list with Owner/Admin/Member role and subscriber counts |
+| **5 - Live Logs** | Auto-refreshing logs every 3 seconds. Ctrl+C to exit |
+| **6 - Queries** | View user messages/queries and reply from terminal |
+| **P - Pause ALL** | Pause every task across all users |
+| **R - Resume ALL** | Resume all paused tasks |
+
+### Drill-Down User View
+From Users Overview, enter a user's number to see:
+- Full details: phone, join date, last active, client status
+- Usage stats: total messages, today, this week, images
+- All their tasks with status flags
+- All their channels with Owner/Admin/Member roles and subscriber counts
+- Recent forwarder logs
+- **P** to pause all their tasks, **R** to resume
+
+### Query / Message System
+Users can send queries to you through the bot:
+1. User taps **Contact Admin** in their main menu
+2. User types their message
+3. You see it in the dashboard under **Queries** (option 6)
+4. Enter the query number, type your reply
+5. Reply is sent directly to the user on Telegram
+
+Unreplied query count shows on the dashboard summary so you don't miss anything.
 
 ---
 
@@ -238,10 +264,14 @@ Go to **Import/Export** → **Import Tasks**. Send a `.json` file in the same fo
 
 ```
 project/
-├── run_bot.py              ← START HERE (bot mode)
+├── run_bot.py              ← START HERE (bot + admin dashboard)
 ├── main.py                 ← CLI mode (independent)
-├── bot_database.py         ← Multi-tenant database
+├── bot_database.py         ← Multi-tenant database (5 tables)
 ├── bot_forwarder.py        ← Telethon client pool + forwarding
+├── admin/                  ← CLI admin dashboard package
+│   ├── cli.py              ← Main interactive menu loop
+│   ├── views.py            ← All dashboard views
+│   └── helpers.py          ← Terminal colors + formatting
 ├── bot_handlers/           ← All bot UI handlers
 │   ├── auth.py             ← Login flow
 │   ├── menu.py             ← Main menu
@@ -252,7 +282,8 @@ project/
 │   ├── statistics.py       ← Stats display
 │   ├── reports.py          ← AI reports
 │   ├── export_import.py    ← JSON backup/restore
-│   └── admin.py            ← Admin panel + transfers
+│   ├── admin.py            ← Telegram admin panel + transfers
+│   └── queries.py          ← User query/message system
 ├── rewriter/               ← AI rewrite engine
 ├── reports/                ← AI report engine
 ├── sessions/               ← Telethon session files (gitignored)
