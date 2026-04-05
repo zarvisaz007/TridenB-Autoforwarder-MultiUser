@@ -41,13 +41,13 @@ def _build_filter_keyboard(task_id: int, filters: dict) -> InlineKeyboardBuilder
     """Build the inline keyboard showing all filter options with current values."""
     builder = InlineKeyboardBuilder()
 
-    builder.button(text="─── Boolean Filters ───", callback_data="m_noop")
+    builder.button(text="━━ Toggle Filters ━━", callback_data="m_noop")
     for key in BOOLEAN_FILTERS:
         status = "ON" if filters.get(key, False) else "OFF"
         label = FILTER_LABELS[key]
         builder.button(text=f"{label}: {status}", callback_data=f"ft_{task_id}_{key}")
 
-    builder.button(text="─── List Filters ───", callback_data="m_noop")
+    builder.button(text="━━ List Filters ━━", callback_data="m_noop")
     for key in LIST_FILTERS:
         items = filters.get(key, [])
         count = len(items) if items else 0
@@ -55,13 +55,13 @@ def _build_filter_keyboard(task_id: int, filters: dict) -> InlineKeyboardBuilder
         label = FILTER_LABELS[key]
         builder.button(text=f"{label}: [{display}]", callback_data=f"fl_{task_id}_{key}")
 
-    builder.button(text="─── Number Filters ───", callback_data="m_noop")
+    builder.button(text="━━ Number Filters ━━", callback_data="m_noop")
     for key in NUMBER_FILTERS:
         value = filters.get(key, 0)
         label = FILTER_LABELS[key]
         builder.button(text=f"{label}: {value}", callback_data=f"fn_{task_id}_{key}")
 
-    builder.button(text="─── AI Rewrite ───", callback_data="m_noop")
+    builder.button(text="━━ AI Rewrite ━━", callback_data="m_noop")
     rewrite_status = "ON" if filters.get("rewrite_enabled", False) else "OFF"
     builder.button(text=f"AI Rewrite: {rewrite_status} (use AI Rewrite Config menu)", callback_data="m_rewrite")
 
@@ -90,7 +90,7 @@ async def _show_filter_menu(callback_or_message, task: dict):
 @router.callback_query(F.data == "m_filters")
 async def cb_filters_menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
-    await show_tasks_submenu(callback, action_prefix="flt", text="Select a task to edit filters:")
+    await show_tasks_submenu(callback, action_prefix="flt", text="🎛  *Edit Filters*\n\nSelect a task:", back_to="cat_filters")
 
 
 # ─── Task selected: show filter keyboard ───

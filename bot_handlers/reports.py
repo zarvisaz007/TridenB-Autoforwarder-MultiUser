@@ -42,10 +42,11 @@ async def cb_reports_menu(callback: CallbackQuery):
     builder = InlineKeyboardBuilder()
     builder.button(text="One-Time Report", callback_data="rep_onetime")
     builder.button(text="Recurring Reports", callback_data="rep_recurring")
-    builder.button(text="<< Back", callback_data="m_main")
+    builder.button(text="⬅️ Back", callback_data="cat_analytics")
     builder.adjust(1)
     await callback.message.edit_text(
-        "**AI Finance Reports**\n\n"
+        "📈  *AI Finance Reports*\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
         f"Model: `{REPORT_CONFIG['ollama']['model']}` (local Ollama)",
         reply_markup=builder.as_markup(), parse_mode="Markdown"
     )

@@ -1,66 +1,89 @@
-# TridenB Autoforwarder V2 — Memory
+# TridenB Autoforwarder — Multi-User Bot Edition
 
 ## What This Project Does
-Local CLI tool that forwards Telegram messages from source channels to destination channels using a personal user account (MTProto via Telethon). No bot token. V2 adds SQLite message tracking, edit/delete sync, AI rewrite, reply threading, and image auto-cleanup.
+Multi-user Telegram autoforwarder with TWO interfaces:
+1. **CLI** (`main.py`) — original single-user terminal interface
+2. **Bot** (`run_bot.py`) — multi-user Telegram bot with inline menus, admin panel, and per-user sessions
+
+Each user connects their own Telegram account via OTP through the bot, gets independent tasks, filters, AI rewriting, reports, and message forwarding — all controlled through inline keyboard menus.
 
 ## Credentials
 - Stored in `.env` (never committed)
-- API_ID=29363636, API_HASH=dd4f18f6956a38dc18087c7495181258
-- Phone: +918544130087
+- `API_ID`, `API_HASH` — Telegram API credentials
+- `BOT_TOKEN` — Aiogram bot token
+- `ADMIN_IDS` — comma-separated Telegram user IDs for admin access
+- `PHONE` — used by CLI mode only
 
-## Session
-- Telethon saves session to `tridenb_autoforwarder.session` after first auth
-- Subsequent runs skip OTP
+## Architecture
 
-## Task Storage
-- `tasks.json` — runtime file, excluded from git
-- Schema: list of task objects with source/dest channel IDs, enabled flag, filters
+### Bot Mode (Multi-User)
+```
+run_bot.py                  — Single entry point
+├── bot_database.py         — Multi-tenant async SQLite (WAL mode)
+├── bot_forwarder.py        — Per-user Telethon client pool + event handlers
+└── bot_handlers/
+    ├── auth.py             — OTP/2FA login flow
+    ├── menu.py             — Categorized inline menu system
+    ├── tasks.py            — Task CRUD with filter setup
+    ├── forwarder_ctl.py    — Start/stop/status + channel ID picker
+    ├── filters.py          — 13 filter types (boolean/list/number)
+    ├── rewriting.py        — AI rewrite toggle + prompt editor
+    ├── statistics.py       — Per-task stats and message threads
+    ├── reports.py          — One-time + recurring AI finance reports
+    ├── export_import.py    — JSON backup/restore
+    └── admin.py            — Admin panel + channel ownership transfer
+```
+
+### CLI Mode (Single-User)
+```
+main.py                     — All 14+ menu options in terminal
+├── database.py             — Synchronous SQLite handler
+├── rewriter/               — AI rewrite engine (Ollama/OpenRouter)
+└── reports/                — AI finance report engine (Ollama)
+```
 
 ## Database
-- `autoforwarder.db` — SQLite database (via `database.py`)
-- Tracks every forwarded message: source/dest IDs, task ID, timestamps, reply threading, image flag
-- Enables edit sync, delete sync, reply threading, statistics, and image auto-cleanup
+- **Bot mode**: `bot_data.db` — 4 tables: users, tasks, message_map, report_schedules
+- **CLI mode**: `autoforwarder.db` — separate single-user database
+- Both gitignored
 
-## Filter Behavior
-- `blacklist_words`: drop entire message if any word matches (case-insensitive)
-- `clean_words`: remove specific strings from text
-- `clean_urls`: strip `https?://\S+` patterns
-- `clean_usernames`: strip `@word` patterns
-- `skip_images/audio/videos`: drop media messages entirely
-- `image_delete_days`: auto-delete forwarded images older than N days
-- `rewrite_enabled`: AI rewrite via OpenRouter before forwarding
-- No text mod -> `forward_messages()` (preserves media + formatting)
-- Text modified -> `send_message()` (text only)
+## Sessions
+- Stored in `sessions/` directory (gitignored)
+- Named `user_{telegram_id}.session`
+- Created during OTP auth, reused on subsequent connections
 
-## AI Rewrite
-- `openrouter_client.py` — sends text to OpenRouter API for AI rewriting
-- Triggered per-task when `rewrite_enabled` filter is set
-- API key configured in `.env`
+## Key Features
+- 16+ features accessible via bot inline menus
+- Per-user Telethon sessions (MTProto)
+- Full filter chain: whitelist, blacklist, regex, URL/username cleaning, media skipping
+- AI rewriting via Ollama (local) with OpenRouter fallback
+- AI finance reports (summary, signals, sentiment, P&L, custom)
+- Edit/delete sync across forwarded messages
+- Reply threading preservation
+- Loop protection (10 msgs in 10s = auto-pause)
+- Image auto-cleanup after N days
+- Admin panel: user management, channel overview, ownership transfer
+- Import/export tasks as JSON
 
-## Current Status (2026-04-04)
-V2 fully implemented. All 14 menu options working. SQLite DB tracks all forwarded messages. Edit/delete sync, reply threading, loop protection, image cleanup, AI rewrite, duplicate task, statistics, and finance report all functional.
+## Current Status (2026-04-06)
+Multi-user bot fully implemented. All features working. Admin panel with channel ownership transfer added. Beautiful categorized menu system with sub-menus. Forwarder status display. Channel ID copy buttons. CLI mode (`main.py`) untouched and still works independently.
 
-## Menu Options
-1.  Get Channel ID — lists all channels/groups
-2.  Create Forwarding Task — source + multiple destinations + filters
-3.  List Tasks — card-style display with channel names, status, filters
-4.  Toggle Task — enable/disable (persisted to tasks.json)
-5.  Edit Task — modify source, destinations, and filters
-6.  Delete Task
-7.  Start Forwarder — background, non-blocking, returns to menu
-8.  Stop Forwarder — removes event handlers cleanly
-9.  Pause / Resume Task — session-only pause, resets loop counter on resume
-10. View Logs — last 50 timestamped entries
-11. Duplicate Task — clone an existing task with new ID
-12. View Statistics — per-task message counts, image counts, last active time
-13. View Message Threads — shows reply chains tracked in DB
-14. Generate AI Finance Report
-0.  Exit — prompts to stop forwarder if running
+## How to Run
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Set up .env with API_ID, API_HASH, BOT_TOKEN, ADMIN_IDS
+
+# Start the bot
+python3 run_bot.py
+```
 
 ## Key Files
-- `main.py` — all CLI logic, menu, forwarder handlers
-- `database.py` — SQLite handler, message logging/querying
-- `openrouter_client.py` — AI rewrite client
-- `tasks.json` — auto-created, runtime task persistence
-- `.env` — credentials
-- `tasks/progress.md` — feature verification checklist
+- `run_bot.py` — bot entry point (start here)
+- `main.py` — CLI entry point (independent)
+- `bot_database.py` — all database operations
+- `bot_forwarder.py` — Telethon client management + forwarding logic
+- `bot_handlers/` — all bot UI handlers
+- `.env` — credentials (never committed)
+- `GUIDE.md` — complete user guide

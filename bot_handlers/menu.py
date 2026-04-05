@@ -9,45 +9,167 @@ router = Router()
 
 def get_main_menu_kb():
     builder = InlineKeyboardBuilder()
-    builder.button(text="1. Get Channel ID", callback_data="m_get_id")
-    builder.button(text="2. Create Task", callback_data="m_create")
-    builder.button(text="3. List Tasks", callback_data="m_list")
-    builder.button(text="4. Toggle Task", callback_data="m_toggle")
-    builder.button(text="5. Edit Task", callback_data="m_edit")
-    builder.button(text="6. Delete Task", callback_data="m_delete")
-    builder.button(text="7. Duplicate Task", callback_data="m_duplicate")
-    builder.button(text="─── Forwarder ───", callback_data="m_noop")
-    builder.button(text="8. Start Forwarder", callback_data="m_start_fwd")
-    builder.button(text="9. Stop Forwarder", callback_data="m_stop_fwd")
-    builder.button(text="10. Pause/Resume", callback_data="m_pause")
-    builder.button(text="─── Filters & AI ───", callback_data="m_noop")
-    builder.button(text="11. Edit Filters", callback_data="m_filters")
-    builder.button(text="12. AI Rewrite Config", callback_data="m_rewrite")
-    builder.button(text="─── Analytics ───", callback_data="m_noop")
-    builder.button(text="13. Statistics", callback_data="m_stats")
-    builder.button(text="14. Message Threads", callback_data="m_threads")
-    builder.button(text="15. View Logs", callback_data="m_logs")
-    builder.button(text="16. AI Finance Reports", callback_data="m_reports")
-    builder.button(text="─── Import/Export ───", callback_data="m_noop")
-    builder.button(text="17. Export Tasks", callback_data="m_export")
-    builder.button(text="18. Import Tasks", callback_data="m_import")
-    builder.button(text="X Close Menu", callback_data="m_close")
-    builder.adjust(1)
+    builder.button(text="📡  Channels", callback_data="cat_channels")
+    builder.button(text="📋  My Tasks", callback_data="cat_tasks")
+    builder.button(text="🔄  Forwarder", callback_data="cat_forwarder")
+    builder.button(text="🎛  Filters & AI", callback_data="cat_filters")
+    builder.button(text="📊  Analytics", callback_data="cat_analytics")
+    builder.button(text="📁  Import / Export", callback_data="cat_export")
+    builder.button(text="🛡  Admin Panel", callback_data="m_admin")
+    builder.button(text="❌  Close", callback_data="m_close")
+    builder.adjust(2, 2, 2, 1, 1)
     return builder.as_markup()
+
+
+MAIN_MENU_TEXT = (
+    "╔══════════════════════════════╗\n"
+    "║    🔺 TridenB Autoforwarder     ║\n"
+    "╚══════════════════════════════╝\n\n"
+    "Welcome! Choose a category below:"
+)
 
 
 async def show_main_menu(target):
     """Send main menu. target can be Message or CallbackQuery."""
-    text = "**TridenB Autoforwarder** — Main Menu\nSelect an option:"
     kb = get_main_menu_kb()
     if isinstance(target, CallbackQuery):
         try:
-            await target.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+            await target.message.edit_text(MAIN_MENU_TEXT, reply_markup=kb)
         except Exception:
-            await target.message.answer(text, reply_markup=kb, parse_mode="Markdown")
+            await target.message.answer(MAIN_MENU_TEXT, reply_markup=kb)
     else:
-        await target.answer(text, reply_markup=kb, parse_mode="Markdown")
+        await target.answer(MAIN_MENU_TEXT, reply_markup=kb)
 
+
+def _back_button(data="m_main"):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⬅️ Back", callback_data=data)
+    return builder
+
+
+# ─── Category: Channels ───
+
+@router.callback_query(F.data == "cat_channels")
+async def cat_channels(callback: CallbackQuery):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📡  Get Channel IDs", callback_data="m_get_id")
+    builder.button(text="⬅️ Back", callback_data="m_main")
+    builder.adjust(1)
+    await callback.message.edit_text(
+        "📡  *Channel Tools*\n\n"
+        "Fetch your Telegram channels and groups.\n"
+        "Tap a channel to copy its ID instantly.",
+        reply_markup=builder.as_markup(),
+        parse_mode="Markdown",
+    )
+    await callback.answer()
+
+
+# ─── Category: Tasks ───
+
+@router.callback_query(F.data == "cat_tasks")
+async def cat_tasks(callback: CallbackQuery):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="➕  Create Task", callback_data="m_create")
+    builder.button(text="📋  List Tasks", callback_data="m_list")
+    builder.button(text="✏️  Edit Task", callback_data="m_edit")
+    builder.button(text="🔀  Toggle ON/OFF", callback_data="m_toggle")
+    builder.button(text="📑  Duplicate Task", callback_data="m_duplicate")
+    builder.button(text="🗑  Delete Task", callback_data="m_delete")
+    builder.button(text="⬅️ Back", callback_data="m_main")
+    builder.adjust(2, 2, 2, 1)
+    await callback.message.edit_text(
+        "📋  *Task Management*\n\n"
+        "Create and manage your forwarding tasks.\n"
+        "Each task forwards from one source to one or more destinations.",
+        reply_markup=builder.as_markup(),
+        parse_mode="Markdown",
+    )
+    await callback.answer()
+
+
+# ─── Category: Forwarder ───
+
+@router.callback_query(F.data == "cat_forwarder")
+async def cat_forwarder(callback: CallbackQuery):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="▶️  Start Forwarder", callback_data="m_start_fwd")
+    builder.button(text="⏹  Stop Forwarder", callback_data="m_stop_fwd")
+    builder.button(text="⏸  Pause / Resume Task", callback_data="m_pause")
+    builder.button(text="📡  Forwarder Status", callback_data="m_fwd_status")
+    builder.button(text="⬅️ Back", callback_data="m_main")
+    builder.adjust(2, 2, 1)
+    await callback.message.edit_text(
+        "🔄  *Forwarder Control*\n\n"
+        "Start, stop or monitor your message forwarder.\n"
+        "Pause individual tasks without stopping the whole engine.",
+        reply_markup=builder.as_markup(),
+        parse_mode="Markdown",
+    )
+    await callback.answer()
+
+
+# ─── Category: Filters & AI ───
+
+@router.callback_query(F.data == "cat_filters")
+async def cat_filters(callback: CallbackQuery):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🎛  Edit Filters", callback_data="m_filters")
+    builder.button(text="🤖  AI Rewrite Config", callback_data="m_rewrite")
+    builder.button(text="⬅️ Back", callback_data="m_main")
+    builder.adjust(1)
+    await callback.message.edit_text(
+        "🎛  *Filters & AI Rewriting*\n\n"
+        "Configure per-task filters: blacklist, whitelist, regex,\n"
+        "URL/username cleaning, media skipping, delays.\n\n"
+        "Enable AI rewriting to transform messages before forwarding.",
+        reply_markup=builder.as_markup(),
+        parse_mode="Markdown",
+    )
+    await callback.answer()
+
+
+# ─── Category: Analytics ───
+
+@router.callback_query(F.data == "cat_analytics")
+async def cat_analytics(callback: CallbackQuery):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📊  Statistics", callback_data="m_stats")
+    builder.button(text="🧵  Message Threads", callback_data="m_threads")
+    builder.button(text="📝  View Logs", callback_data="m_logs")
+    builder.button(text="📈  AI Finance Reports", callback_data="m_reports")
+    builder.button(text="⬅️ Back", callback_data="m_main")
+    builder.adjust(2, 2, 1)
+    await callback.message.edit_text(
+        "📊  *Analytics & Reports*\n\n"
+        "View forwarding statistics, message threads,\n"
+        "live logs, and generate AI-powered reports.",
+        reply_markup=builder.as_markup(),
+        parse_mode="Markdown",
+    )
+    await callback.answer()
+
+
+# ─── Category: Import / Export ───
+
+@router.callback_query(F.data == "cat_export")
+async def cat_export(callback: CallbackQuery):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📤  Export Tasks", callback_data="m_export")
+    builder.button(text="📥  Import Tasks", callback_data="m_import")
+    builder.button(text="⬅️ Back", callback_data="m_main")
+    builder.adjust(2, 1)
+    await callback.message.edit_text(
+        "📁  *Import / Export*\n\n"
+        "Export your task configs as JSON backup.\n"
+        "Import tasks from a previously exported file.",
+        reply_markup=builder.as_markup(),
+        parse_mode="Markdown",
+    )
+    await callback.answer()
+
+
+# ─── Core Navigation ───
 
 @router.callback_query(F.data == "m_main")
 async def cb_main(callback: CallbackQuery):
@@ -62,23 +184,33 @@ async def cb_noop(callback: CallbackQuery):
 
 @router.callback_query(F.data == "m_close")
 async def cb_close(callback: CallbackQuery):
-    await callback.message.delete()
-    await callback.answer("Menu closed. Type /start to open again.")
+    await callback.message.edit_text("Menu closed. Send /start to open again.")
+    await callback.answer()
 
 
-async def show_tasks_submenu(callback: CallbackQuery, action_prefix: str, text: str, back_to="m_main"):
+async def show_tasks_submenu(callback, action_prefix, text, back_to="m_main"):
     from bot_database import get_tasks
     tasks = await get_tasks(callback.from_user.id)
     if not tasks:
-        await callback.message.answer("You have no tasks yet. Create one first.")
+        builder = InlineKeyboardBuilder()
+        builder.button(text="➕ Create Task", callback_data="m_create")
+        builder.button(text="⬅️ Back", callback_data=back_to)
+        builder.adjust(1)
+        await callback.message.edit_text(
+            "You have no tasks yet.\nCreate one to get started!",
+            reply_markup=builder.as_markup(),
+        )
         await callback.answer()
         return
     builder = InlineKeyboardBuilder()
     for t in tasks:
-        status = "ON" if t["enabled"] else "OFF"
-        pause = " [P]" if t["paused"] else ""
-        builder.button(text=f"{t['name']} ({status}{pause})", callback_data=f"{action_prefix}_{t['id']}")
-    builder.button(text="<< Back", callback_data=back_to)
+        icon = "🟢" if t["enabled"] else "🔴"
+        pause = " ⏸" if t["paused"] else ""
+        builder.button(
+            text=f"{icon} {t['name']}{pause}",
+            callback_data=f"{action_prefix}_{t['id']}",
+        )
+    builder.button(text="⬅️ Back", callback_data=back_to)
     builder.adjust(1)
-    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
     await callback.answer()

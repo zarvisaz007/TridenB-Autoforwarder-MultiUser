@@ -18,7 +18,7 @@ class RewriteStates(StatesGroup):
 
 @router.callback_query(F.data == "m_rewrite")
 async def cb_menu_rewrite(callback: CallbackQuery):
-    await show_tasks_submenu(callback, "rew", "Select a task to configure AI Rewrite:")
+    await show_tasks_submenu(callback, "rew", "🤖  *AI Rewrite Config*\n\nSelect a task:", back_to="cat_filters")
 
 
 @router.callback_query(F.data.startswith("rew_") & ~F.data.startswith("rewt_") & ~F.data.startswith("rewp_"))
@@ -41,7 +41,8 @@ async def _show_rewrite_menu(callback: CallbackQuery, task: dict):
     prompt_preview = prompt[:80] + "..." if len(prompt) > 80 else prompt
 
     text = (
-        f"**AI Rewrite — {task['name']}**\n\n"
+        f"🤖  *AI Rewrite — {task['name']}*\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"Status: **{status}**\n"
         f"Prompt: `{prompt_preview}`"
     )
@@ -50,7 +51,7 @@ async def _show_rewrite_menu(callback: CallbackQuery, task: dict):
     toggle_text = "Turn OFF" if enabled else "Turn ON"
     builder.button(text=toggle_text, callback_data=f"rewt_{task['id']}")
     builder.button(text="Change Prompt", callback_data=f"rewp_{task['id']}")
-    builder.button(text="<< Back", callback_data="m_main")
+    builder.button(text="⬅️ Back", callback_data="m_rewrite")
     builder.adjust(1)
 
     await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")

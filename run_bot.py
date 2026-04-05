@@ -156,10 +156,20 @@ async def main():
 
     # Create and start Aiogram bot
     from aiogram import Bot, Dispatcher
-    from bot_handlers import auth, menu, tasks, forwarder_ctl, filters, rewriting, statistics, reports, export_import
+    from bot_handlers import auth, menu, tasks, forwarder_ctl, filters, rewriting, statistics, reports, export_import, admin
 
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher()
+
+    # Wire up admin module with dispatcher storage for cross-user FSM
+    admin.dp_storage = dp.storage
+
+    async def _on_startup(bot_instance: Bot):
+        me = await bot_instance.get_me()
+        admin.bot_id = me.id
+        logger.info(f"Bot ID set: {me.id}")
+
+    dp.startup.register(_on_startup)
 
     # Include all routers (order matters — auth first for /start)
     dp.include_router(auth.router)
@@ -171,6 +181,7 @@ async def main():
     dp.include_router(statistics.router)
     dp.include_router(reports.router)
     dp.include_router(export_import.router)
+    dp.include_router(admin.router)
 
     print(f"  {green('Bot started!')} Polling for messages...")
     print(f"  {dim('Press Ctrl+C to stop.')}")

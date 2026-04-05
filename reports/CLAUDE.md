@@ -78,7 +78,7 @@ delete_schedule(s['id'])
 "
 ```
 
-## Current State (2026-04-04)
+## Current State (2026-04-06)
 
 - All 5 report types working (summary, signals, sentiment, pnl, custom)
 - One-time reports fetch from Telegram directly (any channel)
@@ -86,3 +86,5 @@ delete_schedule(s['id'])
 - Scheduler starts/stops with forwarder
 - Model: qwen2.5:1.5b (986MB), timeout 120s, keep_alive 60s
 - Chunk size: 3000 chars per LLM call
+- Now also accessible via Telegram bot (bot_handlers/reports.py wraps this module for multi-user use)
+- Bot mode uses bot_database.py for message storage instead of the CLI's database.py

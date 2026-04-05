@@ -2,6 +2,7 @@ import time
 import logging
 from aiogram import Router, F
 from aiogram.types import CallbackQuery
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot_database import get_statistics, get_tasks, get_threads
 
@@ -17,11 +18,17 @@ async def cb_stats(callback: CallbackQuery):
     tasks_by_id = {t["id"]: t for t in tasks}
 
     if not stats:
-        await callback.message.answer("No statistics yet. Start forwarding messages first.")
+        builder = InlineKeyboardBuilder()
+        builder.button(text="⬅️ Back", callback_data="cat_analytics")
+        await callback.message.edit_text(
+            "📊  *Statistics*\n\n_No data yet. Start forwarding messages first._",
+            parse_mode="Markdown",
+            reply_markup=builder.as_markup(),
+        )
         await callback.answer()
         return
 
-    lines = ["**Forwarding Statistics**\n"]
+    lines = ["📊  *Forwarding Statistics*\n━━━━━━━━━━━━━━━━━━━━━\n"]
     lines.append("```")
     lines.append(f"{'Task':<20} {'Total':>6} {'Imgs':>5} {'Today':>6} {'Week':>5} {'Last Active'}")
     lines.append("-" * 70)
@@ -53,7 +60,12 @@ async def cb_stats(callback: CallbackQuery):
     if len(text) > 4000:
         text = text[:3990] + "\n...```"
 
-    await callback.message.answer(text, parse_mode="Markdown")
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔄 Refresh", callback_data="m_stats")
+    builder.button(text="⬅️ Back", callback_data="cat_analytics")
+    builder.adjust(2)
+
+    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=builder.as_markup())
     await callback.answer()
 
 
@@ -65,11 +77,17 @@ async def cb_threads(callback: CallbackQuery):
     tasks_by_id = {t["id"]: t for t in tasks}
 
     if not threads:
-        await callback.message.answer("No reply threads recorded yet.")
+        builder = InlineKeyboardBuilder()
+        builder.button(text="⬅️ Back", callback_data="cat_analytics")
+        await callback.message.edit_text(
+            "🧵  *Message Threads*\n\n_No reply threads recorded yet._",
+            parse_mode="Markdown",
+            reply_markup=builder.as_markup(),
+        )
         await callback.answer()
         return
 
-    lines = ["**Message Threads (Replies)**\n"]
+    lines = ["🧵  *Message Threads (Replies)*\n━━━━━━━━━━━━━━━━━━━━━━━\n"]
 
     for row in threads:
         tname = tasks_by_id.get(row["task_id"], {}).get("name", f"Task {row['task_id']}")
@@ -89,5 +107,7 @@ async def cb_threads(callback: CallbackQuery):
     if len(text) > 4000:
         text = text[:3990] + "..."
 
-    await callback.message.answer(text, parse_mode="Markdown")
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⬅️ Back", callback_data="cat_analytics")
+    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=builder.as_markup())
     await callback.answer()

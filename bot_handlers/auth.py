@@ -35,9 +35,12 @@ async def cmd_start(message: Message, state: FSMContext):
         return
 
     await message.answer(
-        "Welcome to **TridenB Autoforwarder**!\n\n"
-        "Connect your Telegram account to start forwarding.\n\n"
-        "Please enter your phone number (international format, e.g. `+1234567890`):",
+        "╔══════════════════════════════╗\n"
+        "║    🔺 TridenB Autoforwarder     ║\n"
+        "╚══════════════════════════════╝\n\n"
+        "Welcome! Connect your Telegram account to start.\n\n"
+        "📱 Enter your phone number\n"
+        "(international format, e.g. `+1234567890`):",
         parse_mode="Markdown"
     )
     await state.set_state(AuthStates.waiting_for_phone)
@@ -164,7 +167,12 @@ async def _complete_auth(message: Message, state: FSMContext, user_id: int, clie
         del auth_clients[user_id]
     await state.clear()
 
-    await message.answer("Connected successfully! Your Telegram session is now linked.")
+    await message.answer(
+        "✅  *Connected Successfully!*\n\n"
+        "Your Telegram session is now linked.\n"
+        "Opening main menu...",
+        parse_mode="Markdown",
+    )
 
     # Disconnect the auth client cleanly before starting the forwarder client
     await client.disconnect()
