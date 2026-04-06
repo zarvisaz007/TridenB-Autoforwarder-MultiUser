@@ -38,9 +38,9 @@ def _get_admin_ids():
 
 def _is_admin(user_id):
     admin_ids = _get_admin_ids()
-    if admin_ids:
-        return user_id in admin_ids
-    return True
+    if not admin_ids:
+        return False
+    return user_id in admin_ids
 
 
 # ─── Admin Panel Home ───
@@ -663,8 +663,12 @@ async def cb_xfer_cancel(callback: CallbackQuery, bot: Bot):
 
     owner_uid = int(callback.data.split(":")[1])
 
-    if owner_uid in pending_transfers:
-        del pending_transfers[owner_uid]
+    transfer = pending_transfers.get(owner_uid)
+    if not transfer or time.time() >= transfer["expires_at"]:
+        await callback.answer("No active transfer found for this user.", show_alert=True)
+        return
+
+    del pending_transfers[owner_uid]
 
     # Clear owner's FSM state
     if dp_storage and bot_id:
@@ -770,8 +774,8 @@ async def process_transfer_password(message: Message, state: FSMContext, bot: Bo
             user_msg = "❌ Transfer failed — channel not found."
             admin_msg = "❌ Transfer failed — channel not found or access lost."
         else:
-            user_msg = "❌ Transfer failed: {}".format(error_str[:100])
-            admin_msg = "❌ Transfer failed: {}".format(error_str[:200])
+            user_msg = "❌ Transfer failed. Please try again or contact support."
+            admin_msg = "❌ Transfer failed. Check server logs for details."
 
         await status_msg.edit_text(user_msg)
 

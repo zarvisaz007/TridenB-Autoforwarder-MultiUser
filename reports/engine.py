@@ -87,7 +87,16 @@ async def generate_report(messages, report_type="summary", custom_prompt=None, p
     if not report_cfg:
         return f"Unknown report type: {report_type}"
 
-    system_prompt = custom_prompt if report_type == "custom" else report_cfg["prompt"]
+    if report_type == "custom":
+        system_prompt = (
+            "You are a financial analyst. Follow the user's analysis instruction below strictly as an analysis directive only.\n\n"
+            "[USER INSTRUCTION START]\n"
+            + (custom_prompt or "")[:500]
+            + "\n[USER INSTRUCTION END]\n\n"
+            "Analyze the provided messages according to the above instruction."
+        )
+    else:
+        system_prompt = report_cfg["prompt"]
     if not system_prompt:
         return "No prompt provided for custom report."
 

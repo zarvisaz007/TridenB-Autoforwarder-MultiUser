@@ -73,7 +73,36 @@ def clear_loop_counter(user_id, task_id):
     counter.pop(task_id, None)
 
 
-def apply_filters(message, filters):
+_REGEX_TIMEOUT = 2.0  # seconds per regex operation before it is skipped
+
+
+async def _safe_regex_search(pattern: str, text: str) -> bool:
+    """Run re.search in a thread with a timeout. Returns False on timeout or error."""
+    def _run():
+        return bool(re.search(pattern, text, re.IGNORECASE))
+    try:
+        return await asyncio.wait_for(asyncio.to_thread(_run), timeout=_REGEX_TIMEOUT)
+    except asyncio.TimeoutError:
+        logger.warning(f"[ReDoS] regex_blacklist pattern timed out (>={_REGEX_TIMEOUT}s), skipping: {pattern!r}")
+        return False
+    except re.error:
+        return False
+
+
+async def _safe_regex_sub(pattern: str, text: str) -> str:
+    """Run re.sub in a thread with a timeout. Returns original text on timeout or error."""
+    def _run():
+        return re.sub(pattern, "", text)
+    try:
+        return await asyncio.wait_for(asyncio.to_thread(_run), timeout=_REGEX_TIMEOUT)
+    except asyncio.TimeoutError:
+        logger.warning(f"[ReDoS] regex_clean pattern timed out (>={_REGEX_TIMEOUT}s), skipping: {pattern!r}")
+        return text
+    except re.error:
+        return text
+
+
+async def apply_filters(message, filters):
     """Full filter chain — matches main.py logic exactly."""
     if filters.get("skip_images") and message.photo:
         return (False, None)
@@ -96,13 +125,10 @@ def apply_filters(message, filters):
         if word.lower() in text_lower:
             return (False, None)
 
-    # Regex blacklist
+    # Regex blacklist — Fix 5: timeout-guarded
     for pattern in filters.get("regex_blacklist", []):
-        try:
-            if re.search(pattern, text, re.IGNORECASE):
-                return (False, None)
-        except re.error:
-            pass
+        if await _safe_regex_search(pattern, text):
+            return (False, None)
 
     modified = False
 
@@ -111,14 +137,12 @@ def apply_filters(message, filters):
             text = text.replace(w, "")
             modified = True
 
+    # Regex clean — Fix 5: timeout-guarded
     for pattern in filters.get("regex_clean", []):
-        try:
-            new_text = re.sub(pattern, "", text)
-            if new_text != text:
-                text = new_text
-                modified = True
-        except re.error:
-            pass
+        new_text = await _safe_regex_sub(pattern, text)
+        if new_text != text:
+            text = new_text
+            modified = True
 
     if filters.get("clean_urls"):
         new_text = re.sub(r"https?://\S+", "", text)
@@ -259,7 +283,7 @@ async def _process_task(event, user_id, client, task, reply_to_src_id):
         add_user_log(user_id, f"  [LOOP] '{task['name']}' fired {LOOP_LIMIT}x in {LOOP_WINDOW}s — auto-paused!")
         return
 
-    should_forward, modified_text = apply_filters(event.message, task["filters"])
+    should_forward, modified_text = await apply_filters(event.message, task["filters"])
     if not should_forward:
         add_user_log(user_id, f"  [SKIP] '{task['name']}' — filtered")
         return
@@ -336,7 +360,7 @@ async def handle_edit_message(event, user_id, client):
         if not entries:
             continue
 
-        should_forward, modified_text = apply_filters(event.message, task["filters"])
+        should_forward, modified_text = await apply_filters(event.message, task["filters"])
         if not should_forward:
             continue
 

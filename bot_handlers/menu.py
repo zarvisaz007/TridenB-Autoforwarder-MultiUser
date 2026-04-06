@@ -1,6 +1,7 @@
 import logging
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
+from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 logger = logging.getLogger("bot.menu")
@@ -30,8 +31,11 @@ MAIN_MENU_TEXT = (
 )
 
 
-async def show_main_menu(target):
-    """Send main menu. target can be Message or CallbackQuery."""
+async def show_main_menu(target, state: FSMContext = None):
+    """Send main menu. target can be Message or CallbackQuery.
+    If state is provided, clear any stuck FSM state first."""
+    if state is not None:
+        await state.clear()
     kb = get_main_menu_kb()
     if isinstance(target, CallbackQuery):
         try:
@@ -51,7 +55,8 @@ def _back_button(data="m_main"):
 # ─── Category: Channels ───
 
 @router.callback_query(F.data == "cat_channels")
-async def cat_channels(callback: CallbackQuery):
+async def cat_channels(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
     builder = InlineKeyboardBuilder()
     builder.button(text="📡  Get Channel IDs", callback_data="m_get_id")
     builder.button(text="⬅️ Back", callback_data="m_main")
@@ -69,7 +74,8 @@ async def cat_channels(callback: CallbackQuery):
 # ─── Category: Tasks ───
 
 @router.callback_query(F.data == "cat_tasks")
-async def cat_tasks(callback: CallbackQuery):
+async def cat_tasks(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
     builder = InlineKeyboardBuilder()
     builder.button(text="➕  Create Task", callback_data="m_create")
     builder.button(text="📋  List Tasks", callback_data="m_list")
@@ -92,7 +98,8 @@ async def cat_tasks(callback: CallbackQuery):
 # ─── Category: Forwarder ───
 
 @router.callback_query(F.data == "cat_forwarder")
-async def cat_forwarder(callback: CallbackQuery):
+async def cat_forwarder(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
     builder = InlineKeyboardBuilder()
     builder.button(text="▶️  Start Forwarder", callback_data="m_start_fwd")
     builder.button(text="⏹  Stop Forwarder", callback_data="m_stop_fwd")
@@ -113,7 +120,8 @@ async def cat_forwarder(callback: CallbackQuery):
 # ─── Category: Filters & AI ───
 
 @router.callback_query(F.data == "cat_filters")
-async def cat_filters(callback: CallbackQuery):
+async def cat_filters(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
     builder = InlineKeyboardBuilder()
     builder.button(text="🎛  Edit Filters", callback_data="m_filters")
     builder.button(text="🤖  AI Rewrite Config", callback_data="m_rewrite")
@@ -133,7 +141,8 @@ async def cat_filters(callback: CallbackQuery):
 # ─── Category: Analytics ───
 
 @router.callback_query(F.data == "cat_analytics")
-async def cat_analytics(callback: CallbackQuery):
+async def cat_analytics(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
     builder = InlineKeyboardBuilder()
     builder.button(text="📊  Statistics", callback_data="m_stats")
     builder.button(text="🧵  Message Threads", callback_data="m_threads")
@@ -154,7 +163,8 @@ async def cat_analytics(callback: CallbackQuery):
 # ─── Category: Import / Export ───
 
 @router.callback_query(F.data == "cat_export")
-async def cat_export(callback: CallbackQuery):
+async def cat_export(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
     builder = InlineKeyboardBuilder()
     builder.button(text="📤  Export Tasks", callback_data="m_export")
     builder.button(text="📥  Import Tasks", callback_data="m_import")
@@ -173,8 +183,8 @@ async def cat_export(callback: CallbackQuery):
 # ─── Core Navigation ───
 
 @router.callback_query(F.data == "m_main")
-async def cb_main(callback: CallbackQuery):
-    await show_main_menu(callback)
+async def cb_main(callback: CallbackQuery, state: FSMContext):
+    await show_main_menu(callback, state=state)
     await callback.answer()
 
 
@@ -184,7 +194,8 @@ async def cb_noop(callback: CallbackQuery):
 
 
 @router.callback_query(F.data == "m_close")
-async def cb_close(callback: CallbackQuery):
+async def cb_close(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
     await callback.message.edit_text("Menu closed. Send /start to open again.")
     await callback.answer()
 

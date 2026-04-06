@@ -19,7 +19,14 @@ logger = logging.getLogger("bot.reports")
 router = Router()
 
 
+def _cancel_kb():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="❌ Cancel", callback_data="rep_cancel")
+    return kb.as_markup()
+
+
 class ReportOneTimeStates(StatesGroup):
+    waiting_for_manual_channel = State()
     waiting_for_lookback = State()
     choosing_type = State()
     waiting_for_custom_prompt = State()
@@ -38,7 +45,8 @@ class ReportRecurringStates(StatesGroup):
 # ─── Main Reports Menu ───
 
 @router.callback_query(F.data == "m_reports")
-async def cb_reports_menu(callback: CallbackQuery):
+async def cb_reports_menu(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
     builder = InlineKeyboardBuilder()
     builder.button(text="One-Time Report", callback_data="rep_onetime")
     builder.button(text="Recurring Reports", callback_data="rep_recurring")
@@ -50,6 +58,14 @@ async def cb_reports_menu(callback: CallbackQuery):
         f"Model: `{REPORT_CONFIG['ollama']['model']}` (local Ollama)",
         reply_markup=builder.as_markup(), parse_mode="Markdown"
     )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "rep_cancel")
+async def cb_rep_cancel(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    from bot_handlers.menu import show_main_menu
+    await show_main_menu(callback)
     await callback.answer()
 
 
@@ -78,46 +94,50 @@ async def cb_rep_onetime(callback: CallbackQuery, state: FSMContext):
 async def cb_rep_channel(callback: CallbackQuery, state: FSMContext):
     raw = callback.data[4:]
     if raw == "manual":
-        await callback.message.answer("Enter the channel ID:")
-        await state.set_state(ReportOneTimeStates.waiting_for_lookback)
-        await state.update_data(rep_channel_id=None, rep_manual=True)
+        await callback.message.answer("Enter the channel ID:", reply_markup=_cancel_kb())
+        await state.set_state(ReportOneTimeStates.waiting_for_manual_channel)
         await callback.answer()
         return
 
     channel_id = int(raw)
-    await state.update_data(rep_channel_id=channel_id, rep_manual=False)
-    await callback.message.answer("How many days to look back? (e.g. `7`):")
+    await state.update_data(rep_channel_id=channel_id)
+    await callback.message.answer("How many days to look back? (e.g. `7`):", reply_markup=_cancel_kb())
     await state.set_state(ReportOneTimeStates.waiting_for_lookback)
     await callback.answer()
 
 
+@router.message(ReportOneTimeStates.waiting_for_manual_channel, ~F.text.startswith('/'))
+async def process_rep_manual_channel(message: Message, state: FSMContext):
+    try:
+        channel_id = int(message.text.strip())
+    except ValueError:
+        await message.answer("Invalid ID. Enter a numeric channel ID:", reply_markup=_cancel_kb())
+        return
+    await state.update_data(rep_channel_id=channel_id)
+    await message.answer("How many days to look back? (e.g. `7`):", reply_markup=_cancel_kb())
+    await state.set_state(ReportOneTimeStates.waiting_for_lookback)
+
+
 @router.message(ReportOneTimeStates.waiting_for_lookback, ~F.text.startswith('/'))
 async def process_rep_lookback(message: Message, state: FSMContext):
-    data = await state.get_data()
-
-    # Handle manual channel ID entry
-    if data.get("rep_manual") and data.get("rep_channel_id") is None:
-        try:
-            channel_id = int(message.text.strip())
-            await state.update_data(rep_channel_id=channel_id, rep_manual=False)
-            await message.answer("How many days to look back? (e.g. `7`):")
-            return
-        except ValueError:
-            await message.answer("Invalid ID. Enter a number:")
-            return
-
     text = message.text.strip()
     if not text.isdigit() or int(text) <= 0:
-        await message.answer("Enter a positive number:")
+        await message.answer("Enter a positive number:", reply_markup=_cancel_kb())
         return
 
-    await state.update_data(rep_lookback=int(text))
+    lookback_val = int(text)
+    if lookback_val > 90:
+        await message.answer("Maximum lookback is 90 days. Please enter a value between 1 and 90:", reply_markup=_cancel_kb())
+        return
+
+    await state.update_data(rep_lookback=lookback_val)
 
     # Show report type selection
     types = REPORT_CONFIG["report_types"]
     builder = InlineKeyboardBuilder()
     for key, cfg in types.items():
         builder.button(text=cfg["name"], callback_data=f"rtp_{key}")
+    builder.button(text="❌ Cancel", callback_data="rep_cancel")
     builder.adjust(1)
     await message.answer("Select report type:", reply_markup=builder.as_markup())
     await state.set_state(ReportOneTimeStates.choosing_type)
@@ -126,10 +146,14 @@ async def process_rep_lookback(message: Message, state: FSMContext):
 @router.callback_query(F.data.startswith("rtp_"), ReportOneTimeStates.choosing_type)
 async def cb_rep_type(callback: CallbackQuery, state: FSMContext):
     report_type = callback.data[4:]
+    allowed_types = REPORT_CONFIG["report_types"]
+    if report_type not in allowed_types:
+        await callback.answer("Invalid report type.", show_alert=True)
+        return
     await state.update_data(rep_type=report_type)
 
     if report_type == "custom":
-        await callback.message.answer("Enter your custom analysis prompt:")
+        await callback.message.answer("Enter your custom analysis prompt:", reply_markup=_cancel_kb())
         await state.set_state(ReportOneTimeStates.waiting_for_custom_prompt)
         await callback.answer()
         return
@@ -161,7 +185,7 @@ async def _generate_onetime_report(message: Message, state: FSMContext, user_id:
     if client and client.is_connected():
         try:
             cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=lookback)
-            async for msg in client.iter_messages(channel_id, offset_date=cutoff, reverse=True, limit=2000):
+            async for msg in client.iter_messages(channel_id, offset_date=cutoff, reverse=True, limit=500):
                 text = msg.text or ""
                 if text.strip():
                     messages.append({
@@ -208,8 +232,8 @@ async def _generate_onetime_report(message: Message, state: FSMContext, user_id:
                 await message.answer(f"**Part {i+1}/{len(chunks)}**\n\n{chunk}", parse_mode="Markdown")
 
     except Exception as e:
-        logger.error(f"Report generation failed: {e}")
-        await progress_msg.edit_text(f"Report generation failed: `{e}`")
+        logger.error(f"Report generation failed for user {user_id}: {e}", exc_info=True)
+        await progress_msg.edit_text("Report generation failed. Please try again later.")
 
 
 # ─── Recurring Reports ───
@@ -265,6 +289,9 @@ async def cb_rsc_create(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data.startswith("rscch_"))
 async def cb_rsc_channel(callback: CallbackQuery, state: FSMContext):
     parts = callback.data.split("_", 2)
+    if len(parts) < 2:
+        await callback.answer("Session expired. Please start again.", show_alert=True)
+        return
     channel_id = int(parts[1])
     channel_name = parts[2] if len(parts) > 2 else str(channel_id)
     await state.update_data(rsc_channel_id=channel_id, rsc_channel_name=channel_name)
@@ -273,24 +300,29 @@ async def cb_rsc_channel(callback: CallbackQuery, state: FSMContext):
     builder.button(text="Daily", callback_data="rscf_daily")
     builder.button(text="Weekly", callback_data="rscf_weekly")
     builder.button(text="Monthly", callback_data="rscf_monthly")
-    builder.adjust(3)
+    builder.button(text="❌ Cancel", callback_data="rep_cancel")
+    builder.adjust(3, 1)
     await callback.message.edit_text("Select frequency:", reply_markup=builder.as_markup())
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("rscf_"))
 async def cb_rsc_freq(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    if not data.get("rsc_channel_id"):
+        await callback.answer("Session expired. Please start again.", show_alert=True)
+        return
     freq = callback.data[5:]
     await state.update_data(rsc_frequency=freq)
 
     if freq == "weekly":
-        await callback.message.answer("Day of week? (0=Mon, 1=Tue, ..., 6=Sun):")
+        await callback.message.answer("Day of week? (0=Mon, 1=Tue, ..., 6=Sun):", reply_markup=_cancel_kb())
         await state.set_state(ReportRecurringStates.waiting_for_day)
     elif freq == "monthly":
-        await callback.message.answer("Day of month? (1-31):")
+        await callback.message.answer("Day of month? (1-31):", reply_markup=_cancel_kb())
         await state.set_state(ReportRecurringStates.waiting_for_day)
     else:
-        await callback.message.answer("Time of day? (HH:MM, 24h format, e.g. `08:00`):")
+        await callback.message.answer("Time of day? (HH:MM, 24h format, e.g. `08:00`):", reply_markup=_cancel_kb())
         await state.set_state(ReportRecurringStates.waiting_for_time)
     await callback.answer()
 
@@ -300,37 +332,46 @@ async def process_rsc_day(message: Message, state: FSMContext):
     data = await state.get_data()
     text = message.text.strip()
     if not text.isdigit():
-        await message.answer("Enter a number:")
+        await message.answer("Enter a number:", reply_markup=_cancel_kb())
         return
 
     val = int(text)
     if data["rsc_frequency"] == "weekly":
         if not (0 <= val <= 6):
-            await message.answer("Enter 0-6:")
+            await message.answer("Enter 0-6:", reply_markup=_cancel_kb())
             return
         await state.update_data(rsc_day_of_week=val)
     else:
         if not (1 <= val <= 31):
-            await message.answer("Enter 1-31:")
+            await message.answer("Enter 1-31:", reply_markup=_cancel_kb())
             return
         await state.update_data(rsc_day_of_month=val)
 
-    await message.answer("Time of day? (HH:MM, 24h, e.g. `08:00`):")
+    await message.answer("Time of day? (HH:MM, 24h, e.g. `08:00`):", reply_markup=_cancel_kb())
     await state.set_state(ReportRecurringStates.waiting_for_time)
 
 
 @router.message(ReportRecurringStates.waiting_for_time, ~F.text.startswith('/'))
 async def process_rsc_time(message: Message, state: FSMContext):
     text = message.text.strip()
-    if ":" not in text:
-        await message.answer("Use HH:MM format:")
+    parts = text.split(":")
+    valid = False
+    if len(parts) == 2:
+        try:
+            hour = int(parts[0])
+            minute = int(parts[1])
+            valid = (0 <= hour <= 23) and (0 <= minute <= 59)
+        except ValueError:
+            valid = False
+    if not valid:
+        await message.answer("Use HH:MM format (e.g. `08:00`). Hour must be 0-23 and minute 0-59:")
         return
     await state.update_data(rsc_time=text)
 
     lookback_map = {"daily": 1, "weekly": 7, "monthly": 30}
     data = await state.get_data()
     default = lookback_map.get(data["rsc_frequency"], 1)
-    await message.answer(f"Days of data to analyze? (default: {default}):")
+    await message.answer(f"Days of data to analyze? (default: {default}):", reply_markup=_cancel_kb())
     await state.set_state(ReportRecurringStates.waiting_for_lookback)
 
 
@@ -347,6 +388,7 @@ async def process_rsc_lookback(message: Message, state: FSMContext):
     builder = InlineKeyboardBuilder()
     for key, cfg in types.items():
         builder.button(text=cfg["name"], callback_data=f"rsct_{key}")
+    builder.button(text="❌ Cancel", callback_data="rep_cancel")
     builder.adjust(1)
     await message.answer("Report type:", reply_markup=builder.as_markup())
     await state.set_state(ReportRecurringStates.choosing_type)
@@ -355,10 +397,14 @@ async def process_rsc_lookback(message: Message, state: FSMContext):
 @router.callback_query(F.data.startswith("rsct_"), ReportRecurringStates.choosing_type)
 async def cb_rsc_type(callback: CallbackQuery, state: FSMContext):
     report_type = callback.data[5:]
+    allowed_types = REPORT_CONFIG["report_types"]
+    if report_type not in allowed_types:
+        await callback.answer("Invalid report type.", show_alert=True)
+        return
     await state.update_data(rsc_report_type=report_type)
 
     if report_type == "custom":
-        await callback.message.answer("Enter your custom prompt:")
+        await callback.message.answer("Enter your custom prompt:", reply_markup=_cancel_kb())
         await state.set_state(ReportRecurringStates.waiting_for_custom_prompt)
         await callback.answer()
         return

@@ -13,7 +13,7 @@ from bot_database import (
 from admin.helpers import (
     clear, header, section, line, dline, ainput,
     green, red, yellow, cyan, magenta, bold, dim, white,
-    phone_display, format_number,
+    phone_display, format_number, sanitize,
 )
 
 
@@ -51,7 +51,7 @@ async def view_users():
 
         for idx, u in enumerate(users, 1):
             uid = str(u["id"])
-            phone = phone_display(u.get("phone"))
+            phone = sanitize(phone_display(u.get("phone")))
 
             if u["auth_state"] == "CONNECTED":
                 status = green("ONLINE")
@@ -103,7 +103,7 @@ async def view_user_detail(user):
     while True:
         clear()
         uid = user["id"]
-        phone = phone_display(user.get("phone"))
+        phone = sanitize(phone_display(user.get("phone")))
 
         header("User: {} ({})".format(phone, uid))
 
@@ -162,7 +162,7 @@ async def view_user_detail(user):
                     parts.append(cyan("AI"))
                 dest_count = str(len(t.get("destination_channel_ids", [])))
                 print("  {:<5} {:<22} {:<18} {:<6} {}".format(
-                    t["id"], t["name"][:20], t["source_channel_id"], dest_count, " ".join(parts)))
+                    t["id"], sanitize(t["name"])[:20], t["source_channel_id"], dest_count, " ".join(parts)))
 
         # ─── Channels ───
         section("Channels & Ownership")
@@ -174,7 +174,7 @@ async def view_user_detail(user):
                     if not dialog.is_channel:
                         continue
                     entity = dialog.entity
-                    name = dialog.name or "(no name)"
+                    name = sanitize(dialog.name or "(no name)")
                     full_id = int("-100{}".format(entity.id))
 
                     role = "Member"
@@ -206,7 +206,7 @@ async def view_user_detail(user):
         logs = bot_forwarder.get_user_logs(uid, 8)
         if logs:
             for entry in logs:
-                print("  {}".format(dim(entry)))
+                print("  {}".format(dim(sanitize(entry))))
         else:
             print("  {}".format(dim("No log entries.")))
 
@@ -282,7 +282,7 @@ async def view_tasks():
             if t["filters"].get("rewrite_enabled"):
                 parts.append(cyan("AI"))
 
-            name = t["name"][:20]
+            name = sanitize(t["name"])[:20]
             dest_count = str(len(t.get("destination_channel_ids", [])))
 
             print("  {:<5} {:<14} {:<22} {:<18} {:<6} {}".format(
@@ -360,7 +360,7 @@ async def view_channels():
         if not client or not client.is_connected():
             continue
 
-        phone = phone_display(u.get("phone"))
+        phone = sanitize(phone_display(u.get("phone")))
 
         section("{} ({})".format(phone, uid))
 
@@ -371,7 +371,7 @@ async def view_channels():
                     continue
 
                 entity = dialog.entity
-                name = dialog.name or "(no name)"
+                name = sanitize(dialog.name or "(no name)")
                 full_id = int("-100{}".format(entity.id))
 
                 role = "Member"
@@ -429,12 +429,12 @@ async def view_logs():
                 if not logs:
                     continue
 
-                phone = phone_display(u.get("phone"))
+                phone = sanitize(phone_display(u.get("phone")))
                 any_logs = True
                 print()
                 print("  {} {} ({})".format(bold("User:"), phone, uid))
                 for entry in logs:
-                    print("    {}".format(dim(entry)))
+                    print("    {}".format(dim(sanitize(entry))))
 
             if not any_logs:
                 print()
@@ -478,7 +478,7 @@ async def view_queries(bot_instance):
             print("  " + line(70))
             for q in unreplied:
                 ts = time.strftime("%m-%d %H:%M", time.localtime(q["created_at"]))
-                phone = phone_display(q.get("phone", "?"))
+                phone = sanitize(phone_display(q.get("phone", "?")))
                 print()
                 print("  {}  {} from {} ({})".format(
                     yellow("[#{}]".format(q["id"])),
@@ -487,7 +487,7 @@ async def view_queries(bot_instance):
                     dim(str(q["user_id"])),
                 ))
                 # Wrap long messages
-                msg = q["message"]
+                msg = sanitize(q["message"])
                 for i in range(0, len(msg), 70):
                     print("    {}".format(msg[i:i+70]))
             print()
@@ -497,7 +497,7 @@ async def view_queries(bot_instance):
             print("  " + line(70))
             for q in replied[-10:]:  # Show last 10 replied
                 ts = time.strftime("%m-%d %H:%M", time.localtime(q["created_at"]))
-                phone = phone_display(q.get("phone", "?"))
+                phone = sanitize(phone_display(q.get("phone", "?")))
                 print()
                 print("  {}  {} from {} — {}".format(
                     green("[#{}]".format(q["id"])),
@@ -505,10 +505,10 @@ async def view_queries(bot_instance):
                     phone,
                     green("replied"),
                 ))
-                msg = q["message"]
+                msg = sanitize(q["message"])
                 print("    Q: {}".format(msg[:80]))
                 if q.get("reply"):
-                    print("    A: {}".format(q["reply"][:80]))
+                    print("    A: {}".format(sanitize(q["reply"])[:80]))
 
         print()
         print("  " + dline(50))
@@ -543,8 +543,8 @@ async def view_queries(bot_instance):
 
             print()
             print("  Replying to query #{} from {}:".format(
-                query_id, phone_display(target_q.get("phone", "?"))))
-            print("  {}".format(dim("Q: " + target_q["message"][:120])))
+                query_id, sanitize(phone_display(target_q.get("phone", "?")))))
+            print("  {}".format(dim("Q: " + sanitize(target_q["message"])[:120])))
             print()
 
             try:

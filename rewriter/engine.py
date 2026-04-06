@@ -20,7 +20,7 @@ async def rewrite_text(text, prompt=None, provider=None):
     # Always use the default prompt as base; append custom instructions if provided
     system_prompt = REWRITE_CONFIG["default_prompt"]
     if prompt:
-        system_prompt += f"\n\nAdditional instruction: {prompt}"
+        system_prompt += "\n\n[USER INSTRUCTION START]\n" + prompt[:500] + "\n[USER INSTRUCTION END]"
 
     # If specific provider requested
     if provider:

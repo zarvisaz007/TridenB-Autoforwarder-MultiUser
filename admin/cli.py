@@ -8,7 +8,7 @@ import bot_forwarder
 from bot_database import get_all_users, get_all_tasks, get_all_statistics, get_all_queries
 from admin.helpers import (
     clear, header, line, ainput,
-    green, red, yellow, cyan, bold, dim, format_number,
+    green, red, yellow, cyan, bold, dim, format_number, sanitize,
 )
 from admin.views import (
     view_users, view_tasks, view_stats, view_channels,
@@ -128,4 +128,4 @@ async def _print_recent_messages():
         print("  {}".format(bold("Recent Activity:")))
         # Show last 5 across all users
         for entry in all_recent[-5:]:
-            print("    {}".format(dim(entry)))
+            print("    {}".format(dim(sanitize(entry))))

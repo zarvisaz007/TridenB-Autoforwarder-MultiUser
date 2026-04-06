@@ -27,6 +27,14 @@ class AuthStates(StatesGroup):
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
     user_id = message.from_user.id
+
+    existing = auth_clients.pop(user_id, None)
+    if existing:
+        try:
+            await existing["client"].disconnect()
+        except Exception:
+            pass
+
     user = await get_user(user_id)
 
     if user and user["auth_state"] == "CONNECTED":
@@ -87,7 +95,7 @@ async def process_phone(message: Message, state: FSMContext):
         await state.set_state(AuthStates.waiting_for_otp)
     except Exception as e:
         logger.error(f"Failed to send code for {user_id}: {e}")
-        await message.answer(f"Failed to send code: `{e}`\n\nPlease try again with /start")
+        await message.answer("Failed to send code. Please check your phone number and try again with /start")
         await client.disconnect()
         await state.clear()
 
@@ -122,7 +130,7 @@ async def process_otp(message: Message, state: FSMContext):
             )
             await state.set_state(AuthStates.waiting_for_password)
         else:
-            await message.answer(f"Sign in failed: `{e}`\n\nTry /start again.")
+            await message.answer("Sign in failed. Please try /start again.")
             await client.disconnect()
             del auth_clients[user_id]
             await state.clear()
@@ -148,7 +156,7 @@ async def process_password(message: Message, state: FSMContext):
         await _complete_auth(message, state, user_id, client, delete_message=True)
     except Exception as e:
         logger.error(f"Password error for {user_id}: {type(e).__name__} - {e}")
-        await message.answer(f"Password incorrect or failed: `{e}`\n\nTry /start again.")
+        await message.answer("Password incorrect or verification failed. Try /start again.")
         await client.disconnect()
         del auth_clients[user_id]
         await state.clear()

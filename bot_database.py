@@ -239,10 +239,15 @@ async def update_task_filters(task_id: int, user_id: int, filters: dict):
         await db.commit()
 
 
+_TASK_FIELD_ALLOWLIST = {"name", "source_channel_id", "destination_channel_ids", "enabled", "filters"}
+
+
 async def update_task_field(task_id: int, user_id: int, **kwargs):
     """Update arbitrary task fields (name, source_channel_id, destination_channel_ids)."""
     async with aiosqlite.connect(DB_FILE) as db:
         for field, value in kwargs.items():
+            if field not in _TASK_FIELD_ALLOWLIST:
+                raise ValueError(f"Field '{field}' is not an updatable task field")
             if field == "destination_channel_ids":
                 value = json.dumps(value)
             await db.execute(f"UPDATE tasks SET {field} = ? WHERE id = ? AND user_id = ?",

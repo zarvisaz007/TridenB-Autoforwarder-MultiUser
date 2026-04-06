@@ -416,7 +416,6 @@ async def cb_edit_task_choose_field(callback: CallbackQuery, state: FSMContext):
 
     await state.clear()
     await state.update_data(edit_task_id=task_id)
-    await state.set_state(TaskEditStates.choosing_field)
 
     dests = "\n".join("  → `{}`".format(d) for d in task["destination_channel_ids"])
     status_icon = "🟢" if task["enabled"] else "🔴"

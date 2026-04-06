@@ -1,3 +1,4 @@
+import re
 import logging
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message
@@ -35,6 +36,12 @@ FILTER_LABELS = {
 class FilterEditStates(StatesGroup):
     waiting_for_list_value = State()
     waiting_for_number_value = State()
+
+
+def _cancel_kb(task_id: int):
+    kb = InlineKeyboardBuilder()
+    kb.button(text="❌ Cancel", callback_data=f"flt_{task_id}")
+    return kb.as_markup()
 
 
 def _build_filter_keyboard(task_id: int, filters: dict) -> InlineKeyboardBuilder:
@@ -169,6 +176,7 @@ async def cb_edit_list_filter(callback: CallbackQuery, state: FSMContext):
         f"Send `clear` to remove all entries.\n"
         f"Send `cancel` to go back.",
         parse_mode="Markdown",
+        reply_markup=_cancel_kb(task_id),
     )
     await callback.answer()
 
@@ -195,6 +203,48 @@ async def process_list_value(message: Message, state: FSMContext):
         new_values = []
     else:
         new_values = [v.strip() for v in text.split(",") if v.strip()]
+
+    # Fix 4: cap entry count and per-entry length for all list filters
+    MAX_LIST_ENTRIES = 100
+    MAX_ENTRY_LEN = 200
+    if len(new_values) > MAX_LIST_ENTRIES:
+        await message.answer(
+            f"Too many entries. Maximum allowed is {MAX_LIST_ENTRIES}. Please reduce the list and try again."
+        )
+        return
+    for entry in new_values:
+        if len(entry) > MAX_ENTRY_LEN:
+            await message.answer(
+                f"Entry too long: `{entry[:40]}...`\n"
+                f"Maximum {MAX_ENTRY_LEN} characters per entry.",
+                parse_mode="Markdown",
+            )
+            return
+
+    # Fix 1: validate regex patterns for regex_* keys
+    if filter_key.startswith("regex_") and new_values:
+        MAX_REGEX_ENTRIES = 20
+        if len(new_values) > MAX_REGEX_ENTRIES:
+            await message.answer(
+                f"Too many regex patterns. Maximum allowed is {MAX_REGEX_ENTRIES}."
+            )
+            return
+        for pattern in new_values:
+            if len(pattern) > MAX_ENTRY_LEN:
+                await message.answer(
+                    f"Regex pattern too long: `{pattern[:40]}...`\n"
+                    f"Maximum {MAX_ENTRY_LEN} characters per pattern.",
+                    parse_mode="Markdown",
+                )
+                return
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                await message.answer(
+                    f"Invalid regex pattern: `{pattern}`\nError: {exc}\n\nPlease fix and try again.",
+                    parse_mode="Markdown",
+                )
+                return
 
     task = await get_task(task_id, user_id)
     if not task:
@@ -248,6 +298,7 @@ async def cb_edit_number_filter(callback: CallbackQuery, state: FSMContext):
         f"Send a new number (integer, 0 or above).\n"
         f"Send `cancel` to go back.",
         parse_mode="Markdown",
+        reply_markup=_cancel_kb(task_id),
     )
     await callback.answer()
 
@@ -276,6 +327,22 @@ async def process_number_value(message: Message, state: FSMContext):
             raise ValueError
     except ValueError:
         await message.answer("Please enter a valid non-negative integer, or `cancel` to go back.", parse_mode="Markdown")
+        return
+
+    # Fix 2: cap delay_seconds at 3600 (1 hour)
+    if filter_key == "delay_seconds" and value > 3600:
+        await message.answer(
+            "Maximum delay is `3600` seconds (1 hour). Please enter a value between 0 and 3600.",
+            parse_mode="Markdown",
+        )
+        return
+
+    # Fix 3: cap image_delete_days at 365
+    if filter_key == "image_delete_days" and value > 365:
+        await message.answer(
+            "Maximum is `365` days. Please enter a value between 0 and 365.",
+            parse_mode="Markdown",
+        )
         return
 
     task = await get_task(task_id, user_id)

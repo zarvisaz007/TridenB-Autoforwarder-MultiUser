@@ -3,6 +3,14 @@ Terminal colors, formatting helpers, async input.
 """
 
 import asyncio
+import re
+
+
+def sanitize(text):
+    """Strip ANSI/control characters to prevent terminal escape injection."""
+    if not isinstance(text, str):
+        return str(text)
+    return re.sub(r'[\x00-\x08\x0b-\x1f\x7f-\x9f]', '', text)
 
 
 # ─── ANSI Colors ───

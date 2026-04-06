@@ -75,15 +75,22 @@ async def cb_rew_toggle(callback: CallbackQuery):
     await _show_rewrite_menu(callback, task)
 
 
+def _cancel_kb(task_id: int):
+    kb = InlineKeyboardBuilder()
+    kb.button(text="❌ Cancel", callback_data=f"rew_{task_id}")
+    return kb.as_markup()
+
+
 @router.callback_query(F.data.startswith("rewp_"))
 async def cb_rew_prompt(callback: CallbackQuery, state: FSMContext):
     task_id = int(callback.data.split("_")[1])
     await state.update_data(rewrite_task_id=task_id)
-    await callback.message.answer(
+    await callback.message.edit_text(
         "Type your new rewrite prompt.\n\n"
         "Example: `Paraphrase to avoid copyright claims`\n\n"
         "Send `clear` to reset to default.",
-        parse_mode="Markdown"
+        parse_mode="Markdown",
+        reply_markup=_cancel_kb(task_id),
     )
     await state.set_state(RewriteStates.waiting_for_prompt)
     await callback.answer()
@@ -102,6 +109,29 @@ async def process_rewrite_prompt(message: Message, state: FSMContext):
         return
 
     prompt_text = message.text.strip()
+
+    if prompt_text.lower() == "cancel":
+        await state.clear()
+        filters = task["filters"]
+        enabled = filters.get("rewrite_enabled", False)
+        prompt = filters.get("rewrite_prompt", "") or "Default"
+        status = "ON" if enabled else "OFF"
+        prompt_preview = prompt[:80] + "..." if len(prompt) > 80 else prompt
+        text = (
+            f"🤖  *AI Rewrite — {task['name']}*\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"Status: **{status}**\n"
+            f"Prompt: `{prompt_preview}`"
+        )
+        builder = InlineKeyboardBuilder()
+        toggle_text = "Turn OFF" if enabled else "Turn ON"
+        builder.button(text=toggle_text, callback_data=f"rewt_{task['id']}")
+        builder.button(text="Change Prompt", callback_data=f"rewp_{task['id']}")
+        builder.button(text="⬅️ Back", callback_data="m_rewrite")
+        builder.adjust(1)
+        await message.answer(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+        return
+
     if prompt_text.lower() == "clear":
         prompt_text = ""
 
@@ -114,5 +144,20 @@ async def process_rewrite_prompt(message: Message, state: FSMContext):
     display = prompt_text or "Default"
     await message.answer(f"Rewrite prompt updated: `{display}`", parse_mode="Markdown")
 
-    from bot_handlers.menu import show_main_menu
-    await show_main_menu(message)
+    task["filters"] = filters
+    enabled = filters.get("rewrite_enabled", False)
+    prompt_preview = display[:80] + "..." if len(display) > 80 else display
+    status = "ON" if enabled else "OFF"
+    text = (
+        f"🤖  *AI Rewrite — {task['name']}*\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"Status: **{status}**\n"
+        f"Prompt: `{prompt_preview}`"
+    )
+    builder = InlineKeyboardBuilder()
+    toggle_text = "Turn OFF" if enabled else "Turn ON"
+    builder.button(text=toggle_text, callback_data=f"rewt_{task['id']}")
+    builder.button(text="Change Prompt", callback_data=f"rewp_{task['id']}")
+    builder.button(text="⬅️ Back", callback_data="m_rewrite")
+    builder.adjust(1)
+    await message.answer(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
