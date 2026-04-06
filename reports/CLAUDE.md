@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Self-contained AI finance report engine inside the TridenB Autoforwarder project. Located at `reports/` relative to project root. Uses local Ollama (`qwen2.5:1.5b`) for all LLM work — no cloud APIs needed.
+Self-contained AI finance report engine inside the Ultimate Autoforwarder project. Located at `reports/` relative to project root. Uses local Ollama (`qwen2.5:1.5b`) for all LLM work — no cloud APIs needed.
 
 ## Critical Rules
 

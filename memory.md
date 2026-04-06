@@ -1,4 +1,4 @@
-# TridenB Autoforwarder — Multi-User Bot Edition
+# Ultimate Autoforwarder — Multi-User Bot Edition
 
 ## What This Project Does
 Multi-user Telegram autoforwarder with THREE interfaces:

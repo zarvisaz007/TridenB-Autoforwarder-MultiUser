@@ -43,9 +43,9 @@ async def cmd_start(message: Message, state: FSMContext):
         return
 
     await message.answer(
-        "╔══════════════════════════════╗\n"
-        "║    🔺 TridenB Autoforwarder     ║\n"
-        "╚══════════════════════════════╝\n\n"
+        "╔══════════════════════════════════╗\n"
+        "║   ⚡ Ultimate Autoforwarder      ║\n"
+        "╚══════════════════════════════════╝\n\n"
         "Welcome! Connect your Telegram account to start.\n\n"
         "📱 Enter your phone number\n"
         "(international format, e.g. `+1234567890`):",

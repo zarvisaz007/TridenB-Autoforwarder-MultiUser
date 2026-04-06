@@ -107,6 +107,14 @@ DEFAULT_FILTERS = {
     "image_delete_days": 0,
     "rewrite_enabled": False,
     "rewrite_prompt": "",
+    "replacements": {
+        "enabled": False,
+        "usernames": {},
+        "words": {},
+        "urls": {"domain_map": {}, "remove_unmatched": False},
+        "phones": {},
+        "channel_links": {},
+    },
 }
 
 

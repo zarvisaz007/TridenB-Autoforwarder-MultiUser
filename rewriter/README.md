@@ -1,6 +1,6 @@
-# TridenB Rewriter Engine
+# Ultimate Rewriter Engine
 
-Self-contained AI text rewriting module for the TridenB Autoforwarder.
+Self-contained AI text rewriting module for the Ultimate Autoforwarder.
 
 ## Purpose
 Rewrites forwarded messages so destination channels don't receive copyright strikes.

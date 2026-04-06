@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-TridenB Autoforwarder — Multi-User Bot + Admin Dashboard
+Ultimate Autoforwarder — Multi-User Bot + Admin Dashboard
 Run this single file to start everything.
 """
 
@@ -48,7 +48,8 @@ async def start_bot():
     global _bot_instance
 
     from aiogram import Bot, Dispatcher, BaseMiddleware
-    from aiogram.types import CallbackQuery, TelegramObject
+    from aiogram.types import CallbackQuery, TelegramObject, BotCommand
+    from aiogram.types import MenuButtonCommands
     from bot_handlers import (
         auth, menu, tasks, forwarder_ctl, filters,
         rewriting, statistics, reports, export_import, admin, queries,
@@ -87,6 +88,20 @@ async def start_bot():
         me = await b.get_me()
         admin.bot_id = me.id
         logger.info("Bot ID set: {}".format(me.id))
+
+        # Register bot commands — makes the menu button appear in bottom-left
+        commands = [
+            BotCommand(command="start", description="Open main menu"),
+            BotCommand(command="menu", description="Show main menu"),
+            BotCommand(command="status", description="Forwarder status"),
+            BotCommand(command="tasks", description="View my tasks"),
+            BotCommand(command="stats", description="View statistics"),
+            BotCommand(command="logs", description="View recent logs"),
+            BotCommand(command="help", description="Get help"),
+        ]
+        await b.set_my_commands(commands)
+        await b.set_chat_menu_button(menu_button=MenuButtonCommands())
+        logger.info("Bot commands registered (%d commands)", len(commands))
 
     dp.startup.register(_on_startup)
 
@@ -149,6 +164,13 @@ async def main():
     # Start report scheduler
     await start_report_scheduler()
 
+    # Start NetGuard network monitor
+    from netguard import start_netguard
+    if start_netguard():
+        print(green("  NetGuard network monitor active."))
+    else:
+        print(dim("  NetGuard skipped (Node.js not found or monitor.js missing)."))
+
     # Start the bot in a background task
     bot_task = asyncio.create_task(start_bot())
 
@@ -192,4 +214,8 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
+        pass
+    finally:
+        from netguard import stop_netguard
+        stop_netguard()
         print("\n  Shutdown complete.")

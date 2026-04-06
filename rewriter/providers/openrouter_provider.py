@@ -18,8 +18,8 @@ async def openrouter_rewrite(text, system_prompt):
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {cfg['api_key']}",
-        "HTTP-Referer": "https://github.com/zarvisaz007/TridenB_autoforwarderBETA-V2",
-        "X-Title": "TridenB Rewriter",
+        "HTTP-Referer": "https://github.com/zarvisaz007/Ultimate_autoforwarderBETA-V2",
+        "X-Title": "Ultimate Rewriter",
     }
     req = urllib.request.Request(cfg["url"], data=data, headers=headers)
 

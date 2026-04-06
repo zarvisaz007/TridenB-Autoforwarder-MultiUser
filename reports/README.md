@@ -1,6 +1,6 @@
 # AI Finance Reports Module
 
-Self-contained report generation engine for the TridenB Autoforwarder. Powered by local Ollama LLM (`qwen2.5:1.5b` — 986MB RAM). Runs independently without impacting forwarder performance.
+Self-contained report generation engine for the Ultimate Autoforwarder. Powered by local Ollama LLM (`qwen2.5:1.5b` — 986MB RAM). Runs independently without impacting forwarder performance.
 
 ## Architecture
 

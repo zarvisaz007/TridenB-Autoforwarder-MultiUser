@@ -1,6 +1,7 @@
 import logging
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -32,9 +33,9 @@ def get_main_menu_kb():
 
 
 MAIN_MENU_TEXT = (
-    "╔══════════════════════════════╗\n"
-    "║    🔺 TridenB Autoforwarder     ║\n"
-    "╚══════════════════════════════╝\n\n"
+    "╔══════════════════════════════════╗\n"
+    "║   ⚡ Ultimate Autoforwarder      ║\n"
+    "╚══════════════════════════════════╝\n\n"
     "Welcome! Choose a category below:"
 )
 
@@ -212,6 +213,108 @@ async def cb_close(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.edit_text("Menu closed. Send /start to open again.")
     await callback.answer()
+
+
+# ─── Slash Command Handlers ───
+
+@router.message(Command("menu"))
+async def cmd_menu(message: Message, state: FSMContext):
+    await show_main_menu(message, state=state)
+
+
+@router.message(Command("status"))
+async def cmd_status(message: Message):
+    import bot_forwarder
+    from bot_database import get_tasks, get_statistics
+    user_id = message.from_user.id
+    client = bot_forwarder.user_clients.get(user_id)
+    connected = client is not None and client.is_connected()
+    tasks = await get_tasks(user_id)
+    enabled = sum(1 for t in tasks if t["enabled"])
+    stats = await get_statistics(user_id)
+    today_msgs = sum(s.get("today_count", 0) for s in stats)
+    total_msgs = sum(s.get("total_messages", 0) for s in stats)
+    conn_icon = "🟢 Connected" if connected else "🔴 Disconnected"
+    await message.answer(
+        "📡  *Forwarder Status*\n━━━━━━━━━━━━━━━━━━\n\n"
+        "{}\n📋 {} active task(s) / {} total\n"
+        "📨 Today: {} | All time: {}".format(
+            conn_icon, enabled, len(tasks), today_msgs, total_msgs
+        ),
+        parse_mode="Markdown",
+    )
+
+
+@router.message(Command("tasks"))
+async def cmd_tasks(message: Message):
+    from bot_database import get_tasks
+    user_id = message.from_user.id
+    tasks = await get_tasks(user_id)
+    if not tasks:
+        await message.answer("📋 You have no tasks yet. Use /menu to create one.")
+        return
+    lines = ["📋  *Your Tasks*\n━━━━━━━━━━━━━━━\n"]
+    for t in tasks:
+        icon = "🟢" if t["enabled"] else "🔴"
+        pause = " ⏸" if t["paused"] else ""
+        lines.append("{}  *{}*{}\n     Source: `{}`".format(icon, t["name"], pause, t["source_chat_id"]))
+    await message.answer("\n".join(lines), parse_mode="Markdown")
+
+
+@router.message(Command("stats"))
+async def cmd_stats(message: Message):
+    from bot_database import get_statistics
+    user_id = message.from_user.id
+    stats = await get_statistics(user_id)
+    if not stats:
+        await message.answer("📊 No statistics yet. Start forwarding first.")
+        return
+    total_msgs = sum(s.get("total_messages", 0) for s in stats)
+    total_imgs = sum(s.get("total_images", 0) for s in stats)
+    today = sum(s.get("today_count", 0) for s in stats)
+    week = sum(s.get("week_count", 0) for s in stats)
+    await message.answer(
+        "📊  *Statistics*\n━━━━━━━━━━━━━━━\n\n"
+        "📨 Today: {}\n📅 This week: {}\n"
+        "📊 All time: {} messages, {} images".format(today, week, total_msgs, total_imgs),
+        parse_mode="Markdown",
+    )
+
+
+@router.message(Command("logs"))
+async def cmd_logs(message: Message):
+    import bot_forwarder
+    user_id = message.from_user.id
+    logs = bot_forwarder.get_user_logs(user_id, 15)
+    if not logs:
+        await message.answer("📝 No logs yet. Start the forwarder first.")
+        return
+    text = "📝  *Recent Logs*\n━━━━━━━━━━━━━━━\n\n```\n"
+    for entry in logs:
+        text += entry + "\n"
+    text += "```"
+    if len(text) > 4000:
+        text = text[:3980] + "\n...```"
+    await message.answer(text, parse_mode="Markdown")
+
+
+@router.message(Command("help"))
+async def cmd_help(message: Message):
+    await message.answer(
+        "⚡  *Ultimate Autoforwarder — Help*\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "📌 *Commands:*\n"
+        "/start — Connect account & open menu\n"
+        "/menu — Open main menu\n"
+        "/status — Forwarder connection status\n"
+        "/tasks — List your forwarding tasks\n"
+        "/stats — View forwarding statistics\n"
+        "/logs — View recent activity logs\n"
+        "/help — Show this help message\n\n"
+        "💡 Use the inline menu buttons for full control.\n"
+        "📩 Use Contact Admin from the menu if you need help.",
+        parse_mode="Markdown",
+    )
 
 
 async def show_tasks_submenu(callback, action_prefix, text, back_to="m_main"):

@@ -1,4 +1,4 @@
-# TridenB Autoforwarder — Complete Guide
+# Ultimate Autoforwarder — Complete Guide
 
 Everything you need to know to run and use the bot.
 

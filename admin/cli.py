@@ -28,7 +28,7 @@ async def run_dashboard():
     """Main dashboard loop — runs until user exits."""
     while True:
         clear()
-        header("TridenB Autoforwarder — Admin Dashboard")
+        header("Ultimate Autoforwarder — Admin Dashboard")
 
         await _print_summary()
         await _print_recent_messages()

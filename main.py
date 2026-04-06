@@ -25,7 +25,7 @@ def bold(t): return c(t, "1")
 def dim(t): return c(t, "2")
 
 TASKS_FILE = "tasks.json"
-SESSION_NAME = "tridenb_autoforwarder"
+SESSION_NAME = "ultimate_autoforwarder"
 MAX_LOG = 500
 LOOP_LIMIT = 10    # max forwards per task within LOOP_WINDOW seconds
 LOOP_WINDOW = 10   # seconds
@@ -1456,7 +1456,7 @@ async def main_menu(client):
     while True:
         status = green("RUNNING") if forwarder_active else red("STOPPED")
         paused_info = f" | Paused: {yellow(str(sorted(paused_task_ids)))}" if paused_task_ids else ""
-        print(f"\n{bold(cyan('=== TridenB Autoforwarder ==='))} [Forwarder: {status}{paused_info}]")
+        print(f"\n{bold(cyan('=== Ultimate Autoforwarder ==='))} [Forwarder: {status}{paused_info}]")
         print(dim("─────────────────────────────────────────────"))
         print(f"  {cyan('1.')}  Get Channel ID")
         print(f"  {cyan('2.')}  Create Forwarding Task")
@@ -1547,7 +1547,7 @@ async def main():
     await client.start(phone=phone)
     print(green("Authenticated successfully."))
     print(cyan("  ╔══════════════════════════════════════╗"))
-    print(cyan("  ║    TridenB Autoforwarder BETA V.2    ║"))
+    print(cyan("  ║    Ultimate Autoforwarder BETA V.2    ║"))
     print(cyan("  ║         Telegram → Telegram          ║"))  
     print(cyan("  ╚══════════════════════════════════════╝"))
     sync_paused_from_tasks()

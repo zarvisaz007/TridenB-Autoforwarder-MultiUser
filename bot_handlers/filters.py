@@ -36,6 +36,7 @@ FILTER_LABELS = {
 class FilterEditStates(StatesGroup):
     waiting_for_list_value = State()
     waiting_for_number_value = State()
+    waiting_for_replacement_pairs = State()
 
 
 def _cancel_kb(task_id: int):
@@ -67,6 +68,18 @@ def _build_filter_keyboard(task_id: int, filters: dict) -> InlineKeyboardBuilder
         value = filters.get(key, 0)
         label = FILTER_LABELS[key]
         builder.button(text=f"{label}: {value}", callback_data=f"fn_{task_id}_{key}")
+
+    # Replacements section
+    rep = filters.get("replacements", {})
+    rep_enabled = rep.get("enabled", False)
+    rep_status = "ON" if rep_enabled else "OFF"
+    total_rules = (
+        len(rep.get("usernames", {})) + len(rep.get("words", {}))
+        + len(rep.get("urls", {}).get("domain_map", {}))
+        + len(rep.get("phones", {})) + len(rep.get("channel_links", {}))
+    )
+    builder.button(text="━━ Replacements ━━", callback_data="m_noop")
+    builder.button(text=f"Replacements: {rep_status} ({total_rules} rules)", callback_data=f"fr_{task_id}")
 
     builder.button(text="━━ AI Rewrite ━━", callback_data="m_noop")
     rewrite_status = "ON" if filters.get("rewrite_enabled", False) else "OFF"
@@ -360,3 +373,268 @@ async def process_number_value(message: Message, state: FSMContext):
     label = FILTER_LABELS[filter_key]
     await message.answer(f"{label} set to `{value}`.", parse_mode="Markdown")
     await _show_filter_menu(message, task)
+
+
+# ─── Replacements Submenu ───
+
+REPLACEMENT_CATEGORIES = {
+    "usernames": ("@Username Mappings", "@old_name:@new_name"),
+    "words": ("Word/Phrase Mappings", "OldBrand:NewBrand"),
+    "url_domains": ("URL Domain Rules", "cosmofeed.com:https://mysite.com/page"),
+    "phones": ("Phone Mappings", "+911234567890:+919876543210"),
+    "channel_links": ("Channel Link Mappings", "old_group:new_group"),
+}
+
+
+def _build_replacement_keyboard(task_id: int, rep: dict) -> InlineKeyboardBuilder:
+    builder = InlineKeyboardBuilder()
+    enabled = rep.get("enabled", False)
+    builder.button(
+        text=f"{'🟢' if enabled else '🔴'} Replacements: {'ON' if enabled else 'OFF'}",
+        callback_data=f"frt_{task_id}",
+    )
+    builder.button(
+        text=f"@Usernames ({len(rep.get('usernames', {}))})",
+        callback_data=f"fre_{task_id}_usernames",
+    )
+    builder.button(
+        text=f"Words/Phrases ({len(rep.get('words', {}))})",
+        callback_data=f"fre_{task_id}_words",
+    )
+    dm = rep.get("urls", {}).get("domain_map", {})
+    builder.button(
+        text=f"URL Domains ({len(dm)})",
+        callback_data=f"fre_{task_id}_url_domains",
+    )
+    rm_unmatched = rep.get("urls", {}).get("remove_unmatched", False)
+    builder.button(
+        text=f"Remove Unmatched URLs: {'ON' if rm_unmatched else 'OFF'}",
+        callback_data=f"fru_{task_id}",
+    )
+    builder.button(
+        text=f"Phones ({len(rep.get('phones', {}))})",
+        callback_data=f"fre_{task_id}_phones",
+    )
+    builder.button(
+        text=f"Channel Links ({len(rep.get('channel_links', {}))})",
+        callback_data=f"fre_{task_id}_channel_links",
+    )
+    builder.button(text="🗑 Clear All Replacements", callback_data=f"frc_{task_id}")
+    builder.button(text="<< Back to Filters", callback_data=f"flt_{task_id}")
+    builder.adjust(1)
+    return builder
+
+
+async def _show_replacement_menu(target, task: dict):
+    rep = task["filters"].get("replacements", {})
+    text = (
+        f"🔄  *Replacements — {task['name']}*\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"Swap usernames, words, URLs, phones, and\n"
+        f"channel links before forwarding.\n\n"
+        f"Replacements run *after* word cleaning but\n"
+        f"*before* Remove URLs / Remove @Usernames."
+    )
+    kb = _build_replacement_keyboard(task["id"], rep).as_markup()
+    if isinstance(target, CallbackQuery):
+        try:
+            await target.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+        except Exception:
+            await target.message.answer(text, reply_markup=kb, parse_mode="Markdown")
+    elif isinstance(target, Message):
+        await target.answer(text, reply_markup=kb, parse_mode="Markdown")
+
+
+@router.callback_query(F.data.regexp(r"^fr_\d+$"))
+async def cb_replacement_menu(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    task_id = int(callback.data.split("_")[1])
+    user_id = callback.from_user.id
+    task = await get_task(task_id, user_id)
+    if not task:
+        await callback.answer("Task not found.", show_alert=True)
+        return
+    await _show_replacement_menu(callback, task)
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^frt_\d+$"))
+async def cb_toggle_replacements(callback: CallbackQuery):
+    task_id = int(callback.data.split("_")[1])
+    user_id = callback.from_user.id
+    task = await get_task(task_id, user_id)
+    if not task:
+        await callback.answer("Task not found.", show_alert=True)
+        return
+    filters = task["filters"]
+    rep = filters.setdefault("replacements", {"enabled": False, "usernames": {}, "words": {}, "urls": {"domain_map": {}, "remove_unmatched": False}, "phones": {}, "channel_links": {}})
+    rep["enabled"] = not rep.get("enabled", False)
+    await update_task_filters(task_id, user_id, filters)
+    task["filters"] = filters
+    status = "ON" if rep["enabled"] else "OFF"
+    await _show_replacement_menu(callback, task)
+    await callback.answer(f"Replacements: {status}")
+
+
+@router.callback_query(F.data.regexp(r"^fru_\d+$"))
+async def cb_toggle_remove_unmatched(callback: CallbackQuery):
+    task_id = int(callback.data.split("_")[1])
+    user_id = callback.from_user.id
+    task = await get_task(task_id, user_id)
+    if not task:
+        await callback.answer("Task not found.", show_alert=True)
+        return
+    filters = task["filters"]
+    rep = filters.setdefault("replacements", {"enabled": False, "usernames": {}, "words": {}, "urls": {"domain_map": {}, "remove_unmatched": False}, "phones": {}, "channel_links": {}})
+    urls = rep.setdefault("urls", {"domain_map": {}, "remove_unmatched": False})
+    urls["remove_unmatched"] = not urls.get("remove_unmatched", False)
+    await update_task_filters(task_id, user_id, filters)
+    task["filters"] = filters
+    status = "ON" if urls["remove_unmatched"] else "OFF"
+    await _show_replacement_menu(callback, task)
+    await callback.answer(f"Remove Unmatched URLs: {status}")
+
+
+@router.callback_query(F.data.regexp(r"^fre_\d+_.+$"))
+async def cb_edit_replacement_category(callback: CallbackQuery, state: FSMContext):
+    parts = callback.data.split("_", 2)
+    task_id = int(parts[1])
+    category = parts[2]
+    user_id = callback.from_user.id
+
+    if category not in REPLACEMENT_CATEGORIES:
+        await callback.answer("Invalid category.", show_alert=True)
+        return
+
+    task = await get_task(task_id, user_id)
+    if not task:
+        await callback.answer("Task not found.", show_alert=True)
+        return
+
+    label, example = REPLACEMENT_CATEGORIES[category]
+    rep = task["filters"].get("replacements", {})
+
+    if category == "url_domains":
+        current_map = rep.get("urls", {}).get("domain_map", {})
+    else:
+        current_map = rep.get(category, {})
+
+    if current_map:
+        current_display = "\n".join(f"  `{k}` → `{v}`" for k, v in current_map.items())
+    else:
+        current_display = "  _none_"
+
+    await state.set_state(FilterEditStates.waiting_for_replacement_pairs)
+    await state.update_data(task_id=task_id, category=category)
+
+    kb = InlineKeyboardBuilder()
+    kb.button(text="❌ Cancel", callback_data=f"fr_{task_id}")
+
+    await callback.message.edit_text(
+        f"**Edit: {label}**\n\n"
+        f"Current mappings:\n{current_display}\n\n"
+        f"Send new mappings as comma-separated `old:new` pairs.\n"
+        f"Example: `{example}`\n\n"
+        f"Send `clear` to remove all.\n"
+        f"Send `cancel` to go back.",
+        parse_mode="Markdown",
+        reply_markup=kb.as_markup(),
+    )
+    await callback.answer()
+
+
+@router.message(FilterEditStates.waiting_for_replacement_pairs, ~F.text.startswith("/"))
+async def process_replacement_pairs(message: Message, state: FSMContext):
+    data = await state.get_data()
+    task_id = data["task_id"]
+    category = data["category"]
+    user_id = message.from_user.id
+    text = message.text.strip()
+
+    if text.lower() == "cancel":
+        await state.clear()
+        task = await get_task(task_id, user_id)
+        if task:
+            await _show_replacement_menu(message, task)
+        return
+
+    task = await get_task(task_id, user_id)
+    if not task:
+        await state.clear()
+        await message.answer("Task not found.")
+        return
+
+    filters = task["filters"]
+    rep = filters.setdefault("replacements", {"enabled": False, "usernames": {}, "words": {}, "urls": {"domain_map": {}, "remove_unmatched": False}, "phones": {}, "channel_links": {}})
+
+    if text.lower() == "clear":
+        if category == "url_domains":
+            rep.setdefault("urls", {})["domain_map"] = {}
+        else:
+            rep[category] = {}
+        await update_task_filters(task_id, user_id, filters)
+        await state.clear()
+        label = REPLACEMENT_CATEGORIES[category][0]
+        await message.answer(f"{label} cleared.")
+        task["filters"] = filters
+        await _show_replacement_menu(message, task)
+        return
+
+    # Parse old:new pairs
+    pairs = [p.strip() for p in text.split(",") if p.strip()]
+    if len(pairs) > 50:
+        await message.answer("Too many pairs. Maximum 50 at a time.")
+        return
+
+    new_map = {}
+    for pair in pairs:
+        if ":" not in pair:
+            await message.answer(
+                f"Invalid format: `{pair}`\n\n"
+                f"Use `old:new` format separated by commas.",
+                parse_mode="Markdown",
+            )
+            return
+        key, value = pair.split(":", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key:
+            await message.answer("Empty key in pair — please fix and resend.")
+            return
+        new_map[key] = value
+
+    if category == "url_domains":
+        rep.setdefault("urls", {})["domain_map"] = new_map
+    else:
+        rep[category] = new_map
+
+    await update_task_filters(task_id, user_id, filters)
+    await state.clear()
+
+    label = REPLACEMENT_CATEGORIES[category][0]
+    await message.answer(f"{label} updated: {len(new_map)} mapping{'s' if len(new_map) != 1 else ''}.")
+    task["filters"] = filters
+    await _show_replacement_menu(message, task)
+
+
+@router.callback_query(F.data.regexp(r"^frc_\d+$"))
+async def cb_clear_all_replacements(callback: CallbackQuery):
+    task_id = int(callback.data.split("_")[1])
+    user_id = callback.from_user.id
+    task = await get_task(task_id, user_id)
+    if not task:
+        await callback.answer("Task not found.", show_alert=True)
+        return
+    filters = task["filters"]
+    filters["replacements"] = {
+        "enabled": False,
+        "usernames": {},
+        "words": {},
+        "urls": {"domain_map": {}, "remove_unmatched": False},
+        "phones": {},
+        "channel_links": {},
+    }
+    await update_task_filters(task_id, user_id, filters)
+    task["filters"] = filters
+    await _show_replacement_menu(callback, task)
+    await callback.answer("All replacements cleared.")

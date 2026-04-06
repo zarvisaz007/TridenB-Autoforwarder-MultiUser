@@ -144,6 +144,15 @@ async def apply_filters(message, filters):
             text = new_text
             modified = True
 
+    # Replacer — targeted swaps (runs before clean_urls/clean_usernames)
+    replace_cfg = filters.get("replacements")
+    if replace_cfg and replace_cfg.get("enabled") and text:
+        from replacer import apply_replacements
+        replaced = apply_replacements(text, replace_cfg)
+        if replaced is not None:
+            text = replaced
+            modified = True
+
     if filters.get("clean_urls"):
         new_text = re.sub(r"https?://\S+", "", text)
         if new_text != text:
