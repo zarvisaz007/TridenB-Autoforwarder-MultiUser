@@ -53,7 +53,7 @@ def _cancel_kb():
 async def cb_impexp_cancel(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     from bot_handlers.menu import show_main_menu
-    await show_main_menu(callback.message)
+    await show_main_menu(callback, state=state)
     await callback.answer()
 
 

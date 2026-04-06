@@ -14,7 +14,7 @@ from bot_database import (
     update_task_field,
     DEFAULT_FILTERS,
 )
-from bot_handlers.menu import show_tasks_submenu, show_main_menu
+from bot_handlers.menu import show_tasks_submenu, show_main_menu, safe_edit
 
 logger = logging.getLogger("bot.tasks")
 router = Router()
@@ -104,7 +104,8 @@ def _cancel_kb():
 async def cb_create_task(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await state.set_state(TaskCreateStates.waiting_for_name)
-    await callback.message.edit_text(
+    await safe_edit(
+        callback,
         "➕  *Create New Task*\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         "Step 1 of 3 — *Task Name*\n\n"
@@ -211,7 +212,8 @@ async def cb_list_tasks(callback: CallbackQuery):
         builder.button(text="➕ Create Task", callback_data="m_create")
         builder.button(text="⬅️ Back", callback_data="m_main")
         builder.adjust(1)
-        await callback.message.edit_text(
+        await safe_edit(
+            callback,
             "📋  *My Tasks*\n"
             "━━━━━━━━━━━━\n\n"
             "You have no tasks yet.\n"
@@ -257,7 +259,8 @@ async def cb_list_tasks(callback: CallbackQuery):
     if len(text) > 4000:
         text = text[:3950] + "\n\n_...truncated_"
 
-    await callback.message.edit_text(
+    await safe_edit(
+        callback,
         text,
         parse_mode="Markdown",
         reply_markup=builder.as_markup(),
@@ -292,7 +295,8 @@ async def cb_toggle_task(callback: CallbackQuery):
     builder.button(text="🏠 Menu", callback_data="m_main")
     builder.adjust(2)
 
-    await callback.message.edit_text(
+    await safe_edit(
+        callback,
         "{} Task *{}* is now *{}*".format(icon, task["name"], label),
         parse_mode="Markdown",
         reply_markup=builder.as_markup(),
@@ -322,7 +326,8 @@ async def cb_delete_confirm(callback: CallbackQuery):
     builder.button(text="❌ Cancel", callback_data="m_main")
     builder.adjust(2)
 
-    await callback.message.edit_text(
+    await safe_edit(
+        callback,
         "⚠️  *Are you sure?*\n\n"
         "Delete task *{}* (ID: `{}`)?\n"
         "This cannot be undone.".format(task["name"], task_id),
@@ -348,7 +353,8 @@ async def cb_delete_task(callback: CallbackQuery):
     builder.button(text="🏠 Menu", callback_data="m_main")
     builder.adjust(2)
 
-    await callback.message.edit_text(
+    await safe_edit(
+        callback,
         "🗑  Task *{}* deleted.".format(task["name"]),
         parse_mode="Markdown",
         reply_markup=builder.as_markup(),
@@ -388,7 +394,8 @@ async def cb_duplicate_task(callback: CallbackQuery):
     builder.button(text="🏠 Menu", callback_data="m_main")
     builder.adjust(1)
 
-    await callback.message.edit_text(
+    await safe_edit(
+        callback,
         "📑  Task duplicated!\n\n"
         "New: *{}* (ID: `{}`)".format(new_name, new_id),
         parse_mode="Markdown",
@@ -429,7 +436,8 @@ async def cb_edit_task_choose_field(callback: CallbackQuery, state: FSMContext):
     builder.button(text="⬅️ Back", callback_data="m_edit")
     builder.adjust(2, 2, 1, 1)
 
-    await callback.message.edit_text(
+    await safe_edit(
+        callback,
         "✏️  *Edit Task*\n"
         "━━━━━━━━━━━━━━\n\n"
         "{status} *{name}*  `(ID: {tid})`\n\n"
@@ -456,7 +464,8 @@ async def cb_edit_name(callback: CallbackQuery, state: FSMContext):
     task_id = int(callback.data.split("_")[1])
     await state.update_data(edit_task_id=task_id)
     await state.set_state(TaskEditStates.waiting_for_name)
-    await callback.message.edit_text(
+    await safe_edit(
+        callback,
         "📝  Send the *new task name*:",
         parse_mode="Markdown",
         reply_markup=_cancel_kb(),
@@ -497,7 +506,8 @@ async def cb_edit_source(callback: CallbackQuery, state: FSMContext):
     task_id = int(callback.data.split("_")[1])
     await state.update_data(edit_task_id=task_id)
     await state.set_state(TaskEditStates.waiting_for_source)
-    await callback.message.edit_text(
+    await safe_edit(
+        callback,
         "📥  Send the *new source channel ID*:\n\n"
         "💡 Use 📡 Channels to find IDs",
         parse_mode="Markdown",
@@ -539,7 +549,8 @@ async def cb_edit_add_dest(callback: CallbackQuery, state: FSMContext):
     task_id = int(callback.data.split("_")[1])
     await state.update_data(edit_task_id=task_id)
     await state.set_state(TaskEditStates.waiting_for_add_dests)
-    await callback.message.edit_text(
+    await safe_edit(
+        callback,
         "➕  Send *destination channel IDs to add*\n"
         "(comma or space separated):",
         parse_mode="Markdown",
@@ -614,7 +625,8 @@ async def cb_edit_rm_dest(callback: CallbackQuery, state: FSMContext):
     await state.set_state(TaskEditStates.waiting_for_remove_dests)
 
     dest_list = "\n".join("  → `{}`".format(d) for d in dests)
-    await callback.message.edit_text(
+    await safe_edit(
+        callback,
         "➖  *Remove Destinations*\n\n"
         "Current:\n{}\n\n"
         "Send the IDs to remove (comma or space separated):".format(dest_list),

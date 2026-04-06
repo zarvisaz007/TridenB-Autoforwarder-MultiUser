@@ -300,10 +300,14 @@ project/
 | Problem | Solution |
 |---------|---------|
 | Bot doesn't start | Check `.env` has valid `API_ID`, `API_HASH`, `BOT_TOKEN` |
+| Bot starts but is completely unresponsive | Was caused by wrong `_on_startup` signature — fixed in current version. Ensure you're running the latest `run_bot.py`. |
+| Buttons show infinite loading spinner | Was caused by unhandled exceptions in callback handlers — `CallbackErrorMiddleware` now catches these automatically. |
 | User can't connect | Make sure they enter phone with `+` country code |
 | OTP fails | User must enter code WITH SPACES: `1 2 3 4 5` |
 | Forwarder not forwarding | Check task is enabled (green), not paused, and forwarder is started |
 | Channel ID not found | User must be a member of the channel. Start forwarder first. |
 | Admin panel shows "Access denied" | Set your Telegram user ID in `ADMIN_IDS` in `.env` |
 | Transfer fails "not a member" | Join the target channel before transferring ownership |
+| Transfer screen disappears without redirect | Fixed — admin.py now redirects to main menu after expired/missing transfers. |
 | AI rewrite not working | Install Ollama and pull a model: `ollama pull gemma3:1b` |
+| Duplicate messages sent on import/export | Fixed — `export_import.py` now edits the existing message instead of sending a new one. |

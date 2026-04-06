@@ -6,7 +6,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 import bot_forwarder
 from bot_database import get_tasks, get_task, get_statistics, update_task_status
-from bot_handlers.menu import show_tasks_submenu
+from bot_handlers.menu import show_tasks_submenu, safe_edit
 
 logger = logging.getLogger("bot.forwarder_ctl")
 router = Router()
@@ -25,7 +25,8 @@ async def cb_get_id(callback: CallbackQuery):
         builder.button(text="▶️ Start Forwarder", callback_data="m_start_fwd")
         builder.button(text="⬅️ Back", callback_data="m_main")
         builder.adjust(1)
-        await callback.message.edit_text(
+        await safe_edit(
+            callback,
             "📡  *Channel Tools*\n"
             "━━━━━━━━━━━━━━━\n\n"
             "⚠️ Your Telegram client is not connected.\n"
@@ -142,7 +143,8 @@ async def cb_start_fwd(callback: CallbackQuery):
         builder.button(text="🔄 Reconnect", callback_data="m_start_fwd")
         builder.button(text="⬅️ Back", callback_data="m_main")
         builder.adjust(2)
-        await callback.message.edit_text(
+        await safe_edit(
+            callback,
             "❌  *Failed to Start*\n\n"
             "Session may be expired.\n"
             "Use /start to re-authenticate.",
@@ -162,7 +164,8 @@ async def cb_start_fwd(callback: CallbackQuery):
     builder.button(text="🏠 Menu", callback_data="m_main")
     builder.adjust(2)
 
-    await callback.message.edit_text(
+    await safe_edit(
+        callback,
         "▶️  *Forwarder Started!*\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         "✅ Session connected\n"
@@ -197,7 +200,8 @@ async def cb_stop_fwd(callback: CallbackQuery):
     builder.button(text="🏠 Menu", callback_data="m_main")
     builder.adjust(2)
 
-    await callback.message.edit_text(
+    await safe_edit(
+        callback,
         "⏹  *Forwarder Stopped*\n\n"
         "Your session is disconnected.\n"
         "Messages will not be forwarded.",
@@ -239,7 +243,8 @@ async def cb_fwd_status(callback: CallbackQuery):
     builder.button(text="⬅️ Back", callback_data="cat_forwarder")
     builder.adjust(2, 1)
 
-    await callback.message.edit_text(
+    await safe_edit(
+        callback,
         "📡  *Forwarder Status*\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         "{conn}\n\n"
@@ -308,7 +313,8 @@ async def cb_logs(callback: CallbackQuery):
     builder.adjust(2)
 
     if not logs:
-        await callback.message.edit_text(
+        await safe_edit(
+            callback,
             "📝  *Forwarder Logs*\n"
             "━━━━━━━━━━━━━━━\n\n"
             "_No logs yet. Start the forwarder and forward some messages._",
@@ -326,5 +332,5 @@ async def cb_logs(callback: CallbackQuery):
     if len(text) > 4000:
         text = text[:3980] + "\n...```"
 
-    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=builder.as_markup())
+    await safe_edit(callback, text, parse_mode="Markdown", reply_markup=builder.as_markup())
     await callback.answer()

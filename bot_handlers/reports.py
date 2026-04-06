@@ -94,14 +94,20 @@ async def cb_rep_onetime(callback: CallbackQuery, state: FSMContext):
 async def cb_rep_channel(callback: CallbackQuery, state: FSMContext):
     raw = callback.data[4:]
     if raw == "manual":
-        await callback.message.answer("Enter the channel ID:", reply_markup=_cancel_kb())
+        try:
+            await callback.message.edit_text("Enter the channel ID:", reply_markup=_cancel_kb())
+        except Exception:
+            await callback.message.answer("Enter the channel ID:", reply_markup=_cancel_kb())
         await state.set_state(ReportOneTimeStates.waiting_for_manual_channel)
         await callback.answer()
         return
 
     channel_id = int(raw)
     await state.update_data(rep_channel_id=channel_id)
-    await callback.message.answer("How many days to look back? (e.g. `7`):", reply_markup=_cancel_kb())
+    try:
+        await callback.message.edit_text("How many days to look back? (e.g. `7`):", reply_markup=_cancel_kb())
+    except Exception:
+        await callback.message.answer("How many days to look back? (e.g. `7`):", reply_markup=_cancel_kb())
     await state.set_state(ReportOneTimeStates.waiting_for_lookback)
     await callback.answer()
 
@@ -153,7 +159,10 @@ async def cb_rep_type(callback: CallbackQuery, state: FSMContext):
     await state.update_data(rep_type=report_type)
 
     if report_type == "custom":
-        await callback.message.answer("Enter your custom analysis prompt:", reply_markup=_cancel_kb())
+        try:
+            await callback.message.edit_text("Enter your custom analysis prompt:", reply_markup=_cancel_kb())
+        except Exception:
+            await callback.message.answer("Enter your custom analysis prompt:", reply_markup=_cancel_kb())
         await state.set_state(ReportOneTimeStates.waiting_for_custom_prompt)
         await callback.answer()
         return
@@ -316,13 +325,22 @@ async def cb_rsc_freq(callback: CallbackQuery, state: FSMContext):
     await state.update_data(rsc_frequency=freq)
 
     if freq == "weekly":
-        await callback.message.answer("Day of week? (0=Mon, 1=Tue, ..., 6=Sun):", reply_markup=_cancel_kb())
+        try:
+            await callback.message.edit_text("Day of week? (0=Mon, 1=Tue, ..., 6=Sun):", reply_markup=_cancel_kb())
+        except Exception:
+            await callback.message.answer("Day of week? (0=Mon, 1=Tue, ..., 6=Sun):", reply_markup=_cancel_kb())
         await state.set_state(ReportRecurringStates.waiting_for_day)
     elif freq == "monthly":
-        await callback.message.answer("Day of month? (1-31):", reply_markup=_cancel_kb())
+        try:
+            await callback.message.edit_text("Day of month? (1-31):", reply_markup=_cancel_kb())
+        except Exception:
+            await callback.message.answer("Day of month? (1-31):", reply_markup=_cancel_kb())
         await state.set_state(ReportRecurringStates.waiting_for_day)
     else:
-        await callback.message.answer("Time of day? (HH:MM, 24h format, e.g. `08:00`):", reply_markup=_cancel_kb())
+        try:
+            await callback.message.edit_text("Time of day? (HH:MM, 24h format, e.g. `08:00`):", reply_markup=_cancel_kb())
+        except Exception:
+            await callback.message.answer("Time of day? (HH:MM, 24h format, e.g. `08:00`):", reply_markup=_cancel_kb())
         await state.set_state(ReportRecurringStates.waiting_for_time)
     await callback.answer()
 
@@ -404,7 +422,10 @@ async def cb_rsc_type(callback: CallbackQuery, state: FSMContext):
     await state.update_data(rsc_report_type=report_type)
 
     if report_type == "custom":
-        await callback.message.answer("Enter your custom prompt:", reply_markup=_cancel_kb())
+        try:
+            await callback.message.edit_text("Enter your custom prompt:", reply_markup=_cancel_kb())
+        except Exception:
+            await callback.message.answer("Enter your custom prompt:", reply_markup=_cancel_kb())
         await state.set_state(ReportRecurringStates.waiting_for_custom_prompt)
         await callback.answer()
         return

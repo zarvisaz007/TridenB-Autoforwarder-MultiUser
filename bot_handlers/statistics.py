@@ -5,6 +5,7 @@ from aiogram.types import CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot_database import get_statistics, get_tasks, get_threads
+from bot_handlers.menu import safe_edit
 
 logger = logging.getLogger("bot.statistics")
 router = Router()
@@ -20,7 +21,8 @@ async def cb_stats(callback: CallbackQuery):
     if not stats:
         builder = InlineKeyboardBuilder()
         builder.button(text="⬅️ Back", callback_data="cat_analytics")
-        await callback.message.edit_text(
+        await safe_edit(
+            callback,
             "📊  *Statistics*\n\n_No data yet. Start forwarding messages first._",
             parse_mode="Markdown",
             reply_markup=builder.as_markup(),
@@ -65,7 +67,7 @@ async def cb_stats(callback: CallbackQuery):
     builder.button(text="⬅️ Back", callback_data="cat_analytics")
     builder.adjust(2)
 
-    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=builder.as_markup())
+    await safe_edit(callback, text, parse_mode="Markdown", reply_markup=builder.as_markup())
     await callback.answer()
 
 
@@ -79,7 +81,8 @@ async def cb_threads(callback: CallbackQuery):
     if not threads:
         builder = InlineKeyboardBuilder()
         builder.button(text="⬅️ Back", callback_data="cat_analytics")
-        await callback.message.edit_text(
+        await safe_edit(
+            callback,
             "🧵  *Message Threads*\n\n_No reply threads recorded yet._",
             parse_mode="Markdown",
             reply_markup=builder.as_markup(),
@@ -109,5 +112,5 @@ async def cb_threads(callback: CallbackQuery):
 
     builder = InlineKeyboardBuilder()
     builder.button(text="⬅️ Back", callback_data="cat_analytics")
-    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=builder.as_markup())
+    await safe_edit(callback, text, parse_mode="Markdown", reply_markup=builder.as_markup())
     await callback.answer()

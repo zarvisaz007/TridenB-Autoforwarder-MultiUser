@@ -54,6 +54,20 @@
 - [x] Bot runs as background asyncio task, CLI in foreground
 - [x] Single entry point: python3 run_bot.py starts everything
 
+## Phase 5: Critical Bug Fixes & UI Reliability (Complete)
+- [x] Fixed `_on_startup` signature crash — aiogram 3.4.1 passes `bot` as keyword arg; was silently killing the entire polling task on startup
+- [x] Added `CallbackErrorMiddleware` — all unhandled callback exceptions caught gracefully, no infinite loading spinners
+- [x] Added webhook deletion before polling — prevents stale webhooks blocking incoming updates
+- [x] Added bot task crash detection on startup
+- [x] Enabled aiogram INFO logging
+- [x] `safe_edit()` helper in `menu.py` — wraps `edit_text()` with try/except fallback to `answer()`; applied to all 6 category handlers and `show_tasks_submenu`
+- [x] `safe_edit()` applied to all 10 bare `edit_text` calls in `tasks.py`
+- [x] `safe_edit()` applied to all 7 bare `edit_text` calls in `forwarder_ctl.py`
+- [x] `safe_edit()` applied to all 4 bare `edit_text` calls in `statistics.py`
+- [x] `reports.py` — 5 `answer()` calls changed to `edit_text()` with fallback; prevents orphan keyboards with stale buttons
+- [x] `export_import.py` — fixed `show_main_menu(callback.message)` → `show_main_menu(callback, state=state)`; was sending duplicate messages instead of editing
+- [x] `admin.py` — added menu redirect after expired/missing transfers so users aren't stranded
+
 ## Remaining / Future Ideas
 - [ ] Web dashboard (optional)
 - [ ] Webhook mode instead of polling (for production)

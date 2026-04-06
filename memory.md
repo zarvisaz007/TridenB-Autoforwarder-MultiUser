@@ -86,6 +86,14 @@ Run `python3 run_bot.py` — bot starts in background, interactive dashboard in 
 ## Current Status (2026-04-06)
 Multi-user bot fully implemented. Interactive CLI admin dashboard with drill-down user views, query system, and pause controls. All features working. Admin panel on both Telegram and terminal. CLI mode (`main.py`) untouched and still works independently.
 
+### Recent Critical Fixes (2026-04-06)
+- **Startup crash fixed**: `_on_startup` in `run_bot.py` had wrong signature (`bot_instance: Bot` positional arg) — aiogram 3.4.1 passes `bot` as a keyword arg, so the polling task crashed silently on every startup, making the bot completely unresponsive. Fixed to `_on_startup(**kwargs)`.
+- **Bot UI reliability**: Added `CallbackErrorMiddleware` (catches all unhandled callback exceptions, prevents infinite loading spinners), webhook deletion before polling, bot task crash detection on startup, and aiogram INFO logging.
+- **`safe_edit()` helper**: Wraps `edit_text()` with try/except fallback to `answer()` — prevents `MessageNotModified`/`MessageToEditNotFound` crashes. Applied across all 6 category handlers in `menu.py`, all 10 edit calls in `tasks.py`, 7 in `forwarder_ctl.py`, 4 in `statistics.py`.
+- **`reports.py`**: Changed 5 `answer()` calls to `edit_text()` with fallback — prevents orphan keyboards with stale buttons.
+- **`export_import.py`**: Fixed `show_main_menu(callback.message)` → `show_main_menu(callback, state=state)` — was sending duplicate messages instead of editing.
+- **`admin.py`**: Added menu redirect after expired/missing transfers so users aren't stranded.
+
 ## How to Run
 ```bash
 # Install dependencies

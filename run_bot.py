@@ -19,7 +19,7 @@ DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 logging.basicConfig(level=logging.INFO, format=LOG_FORMAT, datefmt=DATE_FORMAT)
 logging.getLogger("telethon").setLevel(logging.WARNING)
-logging.getLogger("aiogram").setLevel(logging.WARNING)
+logging.getLogger("aiogram").setLevel(logging.INFO)
 logging.getLogger("aiosqlite").setLevel(logging.WARNING)
 
 logger = logging.getLogger("bot.main")
@@ -47,7 +47,8 @@ async def start_bot():
     """Start the Aiogram bot — runs forever until cancelled."""
     global _bot_instance
 
-    from aiogram import Bot, Dispatcher
+    from aiogram import Bot, Dispatcher, BaseMiddleware
+    from aiogram.types import CallbackQuery, TelegramObject
     from bot_handlers import (
         auth, menu, tasks, forwarder_ctl, filters,
         rewriting, statistics, reports, export_import, admin, queries,
@@ -56,13 +57,34 @@ async def start_bot():
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher()
 
+    # Global error-handling middleware for callback queries.
+    # Prevents the bot from appearing unresponsive when a handler
+    # raises an exception (e.g. MessageNotModified, MessageToEditNotFound).
+    class CallbackErrorMiddleware(BaseMiddleware):
+        async def __call__(self, handler, event: TelegramObject, data: dict):
+            try:
+                return await handler(event, data)
+            except Exception as exc:
+                logger.error("Handler error: %s", exc)
+                if isinstance(event, CallbackQuery):
+                    try:
+                        await event.answer(
+                            "Something went wrong. Please try /start.",
+                            show_alert=True,
+                        )
+                    except Exception:
+                        pass
+
+    dp.callback_query.middleware(CallbackErrorMiddleware())
+
     _bot_instance = bot
 
     # Wire up admin module
     admin.dp_storage = dp.storage
 
-    async def _on_startup(bot_instance: Bot):
-        me = await bot_instance.get_me()
+    async def _on_startup(**kwargs):
+        b = kwargs.get("bot", bot)
+        me = await b.get_me()
         admin.bot_id = me.id
         logger.info("Bot ID set: {}".format(me.id))
 
@@ -81,10 +103,20 @@ async def start_bot():
     dp.include_router(admin.router)
     dp.include_router(queries.router)
 
-    logger.info("Bot started polling...")
+    # Delete any stale webhook — if one is set, polling receives nothing
+    try:
+        wh = await bot.get_webhook_info()
+        if wh.url:
+            logger.warning("Webhook was set to %s — deleting it so polling works", wh.url)
+            await bot.delete_webhook(drop_pending_updates=False)
+    except Exception as e:
+        logger.error("Webhook check failed: %s", e)
+
+    me = await bot.get_me()
+    logger.info("Bot started polling as @%s (id=%s)...", me.username, me.id)
 
     try:
-        await dp.start_polling(bot)
+        await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
     except asyncio.CancelledError:
         pass
     finally:
@@ -120,8 +152,15 @@ async def main():
     # Start the bot in a background task
     bot_task = asyncio.create_task(start_bot())
 
-    # Small delay so bot_instance is set
-    await asyncio.sleep(1)
+    # Small delay so bot_instance is set, then check it didn't crash
+    await asyncio.sleep(2)
+    if bot_task.done():
+        exc = bot_task.exception()
+        if exc:
+            print(red("  ERROR: Bot failed to start: {}".format(exc)))
+            import traceback
+            traceback.print_exception(type(exc), exc, exc.__traceback__)
+            sys.exit(1)
 
     print()
     print(green("  Bot started! Polling for messages in background."))

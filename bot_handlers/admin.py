@@ -707,12 +707,16 @@ async def process_transfer_password(message: Message, state: FSMContext, bot: Bo
     # Check pending transfer exists
     transfer = pending_transfers.pop(owner_uid, None)
     if not transfer:
-        await message.answer("No pending transfer found or it has expired.")
+        await message.answer("No pending transfer found or it has expired. Returning to menu.")
+        from bot_handlers.menu import show_main_menu
+        await show_main_menu(message)
         return
 
     # Check expiry
     if time.time() > transfer["expires_at"]:
-        await message.answer("⏱ Transfer request has expired.")
+        await message.answer("⏱ Transfer request has expired. Returning to menu.")
+        from bot_handlers.menu import show_main_menu
+        await show_main_menu(message)
         return
 
     admin_uid = transfer["admin_id"]
