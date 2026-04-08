@@ -188,15 +188,24 @@ def create_client(user_id: int) -> TelegramClient:
 
     @client.on(events.NewMessage())
     async def nm_handler(event):
-        await handle_new_message(event, user_id, client)
+        try:
+            await handle_new_message(event, user_id, client)
+        except Exception as e:
+            logger.error(f"[User {user_id}] NewMessage handler error: {e}")
 
     @client.on(events.MessageEdited())
     async def me_handler(event):
-        await handle_edit_message(event, user_id, client)
+        try:
+            await handle_edit_message(event, user_id, client)
+        except Exception as e:
+            logger.error(f"[User {user_id}] EditMessage handler error: {e}")
 
     @client.on(events.MessageDeleted())
     async def md_handler(event):
-        await handle_delete_message(event, user_id, client)
+        try:
+            await handle_delete_message(event, user_id, client)
+        except Exception as e:
+            logger.error(f"[User {user_id}] DeleteMessage handler error: {e}")
 
     return client
 
@@ -265,6 +274,8 @@ async def handle_new_message(event, user_id, client):
 
     matched_tasks = [t for t in enabled_tasks if normalize_id(t["source_channel_id"]) == abs_id]
     if not matched_tasks:
+        # Debug: log unmatched chats occasionally so user can see events ARE arriving
+        logger.debug(f"[User {user_id}] No task matches chat {chat_id} (normalized={abs_id})")
         return
 
     text_preview = repr((event.message.text or "")[:60])
@@ -430,14 +441,33 @@ async def _image_cleanup_loop(user_id, client):
 
 
 async def _keepalive_loop(user_id, client):
+    consecutive_failures = 0
     while True:
         try:
-            await client.catch_up()
+            if not client.is_connected():
+                add_user_log(user_id, "[KEEPALIVE] Client disconnected — reconnecting...")
+                logger.warning(f"[User {user_id}] Telethon client disconnected, attempting reconnect")
+                await client.connect()
+                if client.is_connected():
+                    add_user_log(user_id, "[KEEPALIVE] Reconnected successfully!")
+                    logger.info(f"[User {user_id}] Telethon client reconnected")
+                    consecutive_failures = 0
+                else:
+                    consecutive_failures += 1
+                    add_user_log(user_id, f"[KEEPALIVE] Reconnect failed (attempt {consecutive_failures})")
+            else:
+                await client.catch_up()
+                consecutive_failures = 0
         except asyncio.CancelledError:
             return
-        except Exception:
-            pass
-        await asyncio.sleep(10)
+        except Exception as e:
+            consecutive_failures += 1
+            if consecutive_failures <= 5 or consecutive_failures % 10 == 0:
+                add_user_log(user_id, f"[KEEPALIVE] Error (attempt {consecutive_failures}): {e}")
+                logger.warning(f"[User {user_id}] Keepalive error #{consecutive_failures}: {e}")
+        # Back off: 10s normally, up to 60s on repeated failures
+        delay = min(10 + (consecutive_failures * 5), 60)
+        await asyncio.sleep(delay)
 
 
 # ─── Report Scheduler (multi-user) ───
